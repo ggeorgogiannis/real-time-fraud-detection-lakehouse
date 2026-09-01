@@ -39,11 +39,14 @@ The batch implementation will be completed before streaming components are intro
 
 ## Dataset
 
-The project uses synthetic transaction data published with the [Fraud Detection Handbook](https://github.com/Fraud-Detection-Handbook/simulated-data-raw).
+The project is based on the methodology and synthetic transaction simulator documented in the [Fraud Detection Handbook](https://github.com/Fraud-Detection-Handbook/fraud-detection-handbook).
+
+The transaction files are obtained from the handbook's [simulated-data-raw repository](https://github.com/Fraud-Detection-Handbook/simulated-data-raw).
 
 The data is organized into daily files and includes transaction timestamps, customer identifiers, terminal identifiers, transaction amounts and fraud labels. This structure supports incremental ingestion and time-aware fraud analysis.
 
 The dataset is downloaded separately from its official source and is not redistributed through this repository.
+
 
 ## Data Storage Policy
 
