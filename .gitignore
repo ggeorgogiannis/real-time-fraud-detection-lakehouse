@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local data and generated artifacts
+/data/raw/
+/data/bronze/
+/data/silver/
+/data/gold/
+/data/quarantine/
+*.parquet
+*.pkl
+/models/
+/mlruns/
