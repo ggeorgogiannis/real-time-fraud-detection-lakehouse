@@ -2,21 +2,21 @@
 
 A local-first data engineering project for processing transaction data and detecting fraud.
 
-The project starts with a tested batch pipeline and will gradually evolve into a streaming lakehouse. Each tool will be introduced when the existing implementation provides a clear reason to use it.
+The project begins as a tested batch pipeline and will gradually evolve into a streaming lakehouse. Each new tool will be introduced only when the existing implementation creates a clear reason to use it.
 
 ## Current Status
 
-Work is currently focused on the project foundation and the first batch-processing milestone.
+The project is in Phase 1. The repository foundation, data contract, synthetic test fixtures, continuous integration and Bronze ingestion are now implemented.
 
-The first milestone is a local pipeline that can:
+The next milestone is Silver validation and quarantine handling. The first complete batch pipeline will:
 
 * Discover daily transaction files.
-* Ingest transactions without creating duplicate records.
-* Preserve source data in a Bronze layer.
+* Ingest them without creating duplicate records.
+* Preserve raw data in a Bronze layer.
 * Validate and quarantine records in a Silver layer.
 * Create fraud features and analytical tables in a Gold layer.
 * Produce reproducible outputs from a documented command.
-* Verify pipeline behaviour through automated tests.
+* Verify its behaviour through automated tests.
 
 ## Why This Project
 
@@ -47,7 +47,6 @@ The data is organized into daily files and includes transaction timestamps, cust
 
 The dataset is downloaded separately from its official source and is not redistributed through this repository.
 
-
 ## Data Storage Policy
 
 Downloaded data and generated pipeline outputs remain on the local machine.
@@ -61,7 +60,7 @@ They are excluded from Git because:
 * Generated files can become inconsistent with the code that created them.
 * Dataset distribution should continue through the original publisher.
 
-The repository will include small synthetic fixtures for automated tests. These fixtures will cover legitimate transactions, fraud labels, duplicates and invalid records without requiring the complete dataset.
+The repository includes small synthetic fixtures for automated tests. These fixtures cover legitimate transactions, fraud labels, duplicates and invalid records without requiring the complete dataset.
 
 ## Local-First Development
 
@@ -125,6 +124,19 @@ The project will use:
 * Reproducible setup and execution commands.
 
 Comments will explain business rules and non-obvious decisions rather than restating the code.
+
+## Repository Progress
+
+* [x] Create the public GitHub repository.
+* [x] Configure a project-local Python 3.11 environment.
+* [x] Define the initial repository structure.
+* [x] Document the transaction data contract.
+* [x] Add small synthetic test fixtures.
+* [x] Implement Bronze ingestion.
+* [ ] Implement Silver validation and quarantine handling.
+* [ ] Implement Gold features and analytical tables.
+* [x] Add continuous integration.
+* [ ] Publish the first executable release.
 
 ## Running the Project
 
