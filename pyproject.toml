@@ -18,7 +18,10 @@ keywords = [
     "lakehouse",
     "machine-learning"
 ]
-dependencies = []
+dependencies = [
+    "pandas>=2.2",
+    "pyarrow>=18.0"
+]
 
 [project.optional-dependencies]
 dev = [
