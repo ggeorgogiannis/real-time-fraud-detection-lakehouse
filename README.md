@@ -141,7 +141,51 @@ Comments will explain business rules and non-obvious decisions rather than resta
 
 ## Running the Project
 
-Setup and execution instructions will be added with the first working batch pipeline.
+The batch pipeline requires Python 3.11.
+
+Create and activate the project environment:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m ensurepip --upgrade
+python -m pip install -e ".[dev]"
+```
+
+Place daily transaction files in `data/raw`. Input files must use the `YYYY-MM-DD.pkl` naming convention.
+
+Run the complete pipeline:
+
+```bash
+fraud-lakehouse run \
+  --raw-dir data/raw \
+  --output-dir data
+```
+
+The command creates or updates:
+
+* `data/bronze`
+* `data/silver`
+* `data/quarantine`
+* `data/gold`
+
+An explicit ingestion timestamp can be supplied when a reproducible test run is required:
+
+```bash
+fraud-lakehouse run \
+  --raw-dir data/raw \
+  --output-dir data \
+  --ingested-at-utc "2026-09-08T12:00:00Z"
+```
+
+Run the automated checks with:
+
+```bash
+ruff format --check .
+ruff check .
+python -m pytest
+```
+
 
 ## License
 
