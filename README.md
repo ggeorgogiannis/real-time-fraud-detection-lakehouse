@@ -6,18 +6,20 @@ The project begins as a tested batch pipeline and will gradually evolve into a s
 
 ## Current Status
 
-The project is in Phase 1. The repository foundation, data contract, synthetic test fixtures, continuous integration and the Bronze, Silver and Gold batch layers are now implemented.
+Phase 1 is complete. The first executable local batch pipeline was published as [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.1.0).
 
-The next milestone is an executable end-to-end batch command that connects the three layers and produces reproducible outputs from local transaction files.
-
-The current batch implementation can:
+The pipeline can:
 
 * Discover and ingest trusted daily transaction files.
 * Preserve source records and ingestion metadata in Bronze.
 * Validate, type-convert, deduplicate and quarantine records in Silver.
-* Create transaction features and daily customer and terminal summaries in Gold.
+* Create historical transaction features and daily customer and terminal summaries in Gold.
 * Publish Parquet outputs safely and reproducibly.
+* Run through a documented command-line interface.
 * Verify its behaviour through automated unit and integration tests.
+
+Development will now proceed to Phase 2, introducing DuckDB and dbt Core for SQL transformations, analytical models, and data-quality tests.
+
 
 ## Why This Project
 
@@ -90,6 +92,8 @@ The stack may change as the project develops. Significant changes will be docume
 
 Implement Bronze, Silver and Gold processing with Python and Parquet. Add schema validation, quarantine handling, idempotency and automated tests.
 
+Completed in [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.1.0).
+
 ### Phase 2: Analytical Lakehouse
 
 Introduce DuckDB and dbt Core for SQL transformations, data tests and analytical models.
@@ -137,7 +141,7 @@ Comments will explain business rules and non-obvious decisions rather than resta
 * [x] Implement Silver validation and quarantine handling.
 * [x] Implement Gold features and analytical tables.
 * [x] Add continuous integration.
-* [ ] Publish the first executable release.
+* [x] Publish the first executable release.
 
 ## Running the Project
 
