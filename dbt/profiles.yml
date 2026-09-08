@@ -1,0 +1,9 @@
+fraud_lakehouse:
+  target: dev
+
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('FRAUD_LAKEHOUSE_DUCKDB_PATH', 'data/analytics/fraud_lakehouse.duckdb') }}"
+      schema: analytics
+      threads: 4

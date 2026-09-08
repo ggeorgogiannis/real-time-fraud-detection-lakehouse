@@ -227,3 +227,6 @@ __marimo__/
 *.pkl
 /models/
 /mlruns/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/

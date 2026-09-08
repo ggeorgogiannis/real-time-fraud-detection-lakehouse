@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: fct_daily_fraud
+    description: "Daily transaction volume, amount and fraud metrics."
+    columns:
+      - name: transaction_date
+        description: "UTC transaction date."
+        data_tests:
+          - not_null
+          - unique
+
+      - name: transaction_count
+        description: "Number of validated transactions."
+        data_tests:
+          - not_null
+
+      - name: total_amount
+        description: "Total value of validated transactions."
+        data_tests:
+          - not_null
+
+      - name: fraud_count
+        description: "Number of transactions labelled as fraud."
+        data_tests:
+          - not_null
+
+      - name: fraud_rate
+        description: "Proportion of transactions labelled as fraud."
+        data_tests:
+          - not_null
