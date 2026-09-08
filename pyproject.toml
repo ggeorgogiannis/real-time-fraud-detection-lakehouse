@@ -19,8 +19,9 @@ keywords = [
     "machine-learning"
 ]
 dependencies = [
+    "duckdb>=1.5,<2.0",
     "pandas>=2.2",
-    "pyarrow>=18.0"
+    "pyarrow>=18.0",
 ]
 
 [project.optional-dependencies]

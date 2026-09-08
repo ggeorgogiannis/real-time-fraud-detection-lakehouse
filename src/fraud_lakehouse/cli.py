@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from fraud_lakehouse.analytics import build_analytics_database
 from fraud_lakehouse.pipeline import run_batch_pipeline
 
 LOGGER = logging.getLogger(__name__)
@@ -25,6 +26,14 @@ def _parse_utc_datetime(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _add_log_level_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="INFO",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fraud-lakehouse",
@@ -32,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+
     run_parser = subparsers.add_parser(
         "run",
         help="Run the Bronze, Silver and Gold batch pipeline.",
@@ -40,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--raw-dir",
         type=Path,
         required=True,
-        help="Directory containing daily transaction CSV files.",
+        help="Directory containing daily transaction files.",
     )
     run_parser.add_argument(
         "--output-dir",
@@ -53,13 +63,66 @@ def build_parser() -> argparse.ArgumentParser:
         type=_parse_utc_datetime,
         help="Optional timezone-aware ingestion timestamp.",
     )
-    run_parser.add_argument(
-        "--log-level",
-        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
-        default="INFO",
+    _add_log_level_argument(run_parser)
+
+    analytics_parser = subparsers.add_parser(
+        "build-analytics",
+        help="Create a DuckDB database over Silver and Gold Parquet files.",
     )
+    analytics_parser.add_argument(
+        "--silver-dir",
+        type=Path,
+        required=True,
+        help="Directory containing Silver Parquet files.",
+    )
+    analytics_parser.add_argument(
+        "--gold-dir",
+        type=Path,
+        required=True,
+        help="Directory containing Gold Parquet files.",
+    )
+    analytics_parser.add_argument(
+        "--database-path",
+        type=Path,
+        required=True,
+        help="Path of the DuckDB database to create.",
+    )
+    _add_log_level_argument(analytics_parser)
 
     return parser
+
+
+def _run_pipeline_command(arguments: argparse.Namespace) -> int:
+    result = run_batch_pipeline(
+        raw_dir=arguments.raw_dir,
+        output_dir=arguments.output_dir,
+        ingested_at_utc=arguments.ingested_at_utc,
+    )
+
+    LOGGER.info(
+        ("pipeline_completed bronze_files=%d silver_files=%d quarantine_files=%d gold_tables=%d"),
+        len(result.bronze_files),
+        len(result.silver_files),
+        len(result.quarantine_files),
+        len(result.gold_tables),
+    )
+
+    return 0
+
+
+def _build_analytics_command(arguments: argparse.Namespace) -> int:
+    database_path = build_analytics_database(
+        silver_dir=arguments.silver_dir,
+        gold_dir=arguments.gold_dir,
+        database_path=arguments.database_path,
+    )
+
+    LOGGER.info(
+        "analytics_database_built database_path=%s",
+        database_path,
+    )
+
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -72,21 +135,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     try:
-        result = run_batch_pipeline(
-            raw_dir=arguments.raw_dir,
-            output_dir=arguments.output_dir,
-            ingested_at_utc=arguments.ingested_at_utc,
-        )
+        if arguments.command == "run":
+            return _run_pipeline_command(arguments)
+
+        if arguments.command == "build-analytics":
+            return _build_analytics_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
-        LOGGER.error("pipeline_failed error=%s", exc)
+        LOGGER.error(
+            "command_failed command=%s error=%s",
+            arguments.command,
+            exc,
+        )
         return 1
 
-    LOGGER.info(
-        ("pipeline_completed bronze_files=%d silver_files=%d quarantine_files=%d gold_tables=%d"),
-        len(result.bronze_files),
-        len(result.silver_files),
-        len(result.quarantine_files),
-        len(result.gold_tables),
-    )
-
-    return 0
+    parser.error(f"Unsupported command: {arguments.command}")

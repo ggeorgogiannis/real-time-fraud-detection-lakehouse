@@ -52,3 +52,45 @@ def test_main_runs_pipeline_and_logs_summary(
 
     assert exit_code == 0
     assert "pipeline_completed" in caplog.text
+
+
+def test_main_builds_analytics_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    silver_dir = tmp_path / "silver"
+    gold_dir = tmp_path / "gold"
+    database_path = tmp_path / "analytics" / "fraud_lakehouse.duckdb"
+
+    def fake_build_analytics_database(
+        silver_dir: Path,
+        gold_dir: Path,
+        database_path: Path,
+    ) -> Path:
+        assert silver_dir == tmp_path / "silver"
+        assert gold_dir == tmp_path / "gold"
+        assert database_path == (tmp_path / "analytics" / "fraud_lakehouse.duckdb")
+        return database_path
+
+    monkeypatch.setattr(
+        cli,
+        "build_analytics_database",
+        fake_build_analytics_database,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "build-analytics",
+            "--silver-dir",
+            str(silver_dir),
+            "--gold-dir",
+            str(gold_dir),
+            "--database-path",
+            str(database_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "analytics_database_built" in caplog.text
