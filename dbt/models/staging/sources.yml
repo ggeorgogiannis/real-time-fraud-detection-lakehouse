@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: lakehouse
+    description: "Parquet-backed views created by the DuckDB analytics layer."
+    schema: main
+
+    tables:
+      - name: silver_transactions
+        description: "Validated and deduplicated Silver transactions."
+        columns:
+          - name: transaction_id
+            data_tests:
+              - not_null
+              - unique
+          - name: tx_datetime
+            data_tests:
+              - not_null
+          - name: customer_id
+            data_tests:
+              - not_null
+          - name: terminal_id
+            data_tests:
+              - not_null
+          - name: tx_amount
+            data_tests:
+              - not_null
+          - name: tx_fraud
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [0, 1]
+
+      - name: gold_transaction_features
+        description: "Transaction-level fraud features."
+        columns:
+          - name: transaction_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: gold_customer_daily_summary
+        description: "Daily customer transaction and fraud metrics."
+        columns:
+          - name: transaction_date
+            data_tests:
+              - not_null
+          - name: customer_id
+            data_tests:
+              - not_null
+
+      - name: gold_terminal_daily_summary
+        description: "Daily terminal transaction and fraud metrics."
+        columns:
+          - name: transaction_date
+            data_tests:
+              - not_null
+          - name: terminal_id
+            data_tests:
+              - not_null

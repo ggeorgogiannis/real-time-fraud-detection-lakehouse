@@ -18,7 +18,7 @@ The pipeline can:
 * Run through a documented command-line interface.
 * Verify its behaviour through automated unit and integration tests.
 
-Development will now proceed to Phase 2, introducing DuckDB and dbt Core for SQL transformations, analytical models, and data-quality tests.
+Phase 2 is now underway. DuckDB integration, the initial dbt project, staging models, the daily fraud mart and automated dbt data tests are implemented. The next milestone is expanding the analytical marts and reporting models.
 
 
 ## Why This Project
@@ -27,18 +27,20 @@ Fraud detection is often presented only as a classification problem. In practice
 
 This project focuses on that complete workflow. Its purpose is to explore how the components fit together and document the engineering decisions made during development.
 
-## Initial Architecture
+## Current Architecture
 
-`Daily transaction files -> Bronze -> Silver -> Gold -> Fraud analysis and model datasets`
+`Daily transaction files -> Bronze -> Silver -> Gold -> DuckDB -> dbt -> Fraud analysis and model datasets`
 
-| Layer      | Responsibility                                                              |
-| ---------- | --------------------------------------------------------------------------- |
-| Bronze     | Store ingested transactions with minimal changes and ingestion metadata     |
-| Silver     | Apply schema checks, type conversions, deduplication and data-quality rules |
-| Gold       | Create fraud features, customer summaries and analytical tables             |
-| Quarantine | Preserve rejected records together with their validation failures           |
+| Component  | Responsibility                                                          |
+| ---------- | ----------------------------------------------------------------------- |
+| Bronze     | Store ingested transactions with minimal changes and ingestion metadata |
+| Silver     | Apply schema checks, type conversions, deduplication and quality rules  |
+| Gold       | Create fraud features, customer summaries and analytical tables         |
+| Quarantine | Preserve rejected records together with their validation failures       |
+| DuckDB     | Expose Silver and Gold Parquet datasets through persistent SQL views    |
+| dbt        | Manage tested SQL transformations, staging models and analytical marts  |
 
-The batch implementation will be completed before streaming components are introduced. It will provide a reliable reference pipeline against which the later Kafka and Spark implementation can be tested.
+The completed batch pipeline provides a reliable foundation for the DuckDB and dbt analytical layer. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
 
 ## Dataset
 
@@ -98,6 +100,8 @@ Completed in [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 Introduce DuckDB and dbt Core for SQL transformations, data tests and analytical models.
 
+DuckDB integration, the dbt project, staging models, the daily fraud mart and automated dbt data tests are now implemented. The next milestone is expanding the analytical marts and reporting models.
+
 ### Phase 3: Fraud Detection
 
 Create time-aware features, train baseline models and evaluate them using metrics appropriate for imbalanced data.
@@ -142,6 +146,12 @@ Comments will explain business rules and non-obvious decisions rather than resta
 * [x] Implement Gold features and analytical tables.
 * [x] Add continuous integration.
 * [x] Publish the first executable release.
+* [x] Add DuckDB analytical views.
+* [x] Create the dbt project and local DuckDB profile.
+* [x] Add dbt staging models and data tests.
+* [x] Add the daily fraud analytical mart.
+* [x] Automate dbt validation in the integration suite.
+* [ ] Expand the analytical marts and reporting models.
 
 ## Running the Project
 
@@ -198,6 +208,16 @@ fraud-lakehouse build-analytics \
   --gold-dir data/gold \
   --database-path data/analytics/fraud_lakehouse.duckdb
 ```
+
+Run the dbt analytical models and data tests:
+
+```bash
+dbt build \
+  --project-dir dbt \
+  --profiles-dir dbt
+```
+
+dbt creates staging views in the `analytics_staging` schema and analytical marts in the `analytics_marts` schema. See [`docs/dbt_analytics.md`](docs/dbt_analytics.md) for the model structure, schemas and test coverage.
 
 The database exposes persistent SQL views over the Silver and Gold Parquet datasets. See [`docs/duckdb_analytics.md`](docs/duckdb_analytics.md) for the view definitions and query examples.
 
