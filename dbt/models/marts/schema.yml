@@ -29,3 +29,83 @@ models:
         description: "Proportion of transactions labelled as fraud."
         data_tests:
           - not_null
+
+  - name: fct_customer_daily_risk
+    description: Daily customer fraud metrics with rolling seven-calendar-day indicators.
+    columns:
+      - name: transaction_date
+        data_tests: [not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: transaction_count
+        data_tests: [not_null]
+      - name: total_amount
+        data_tests: [not_null]
+      - name: average_amount
+        data_tests: [not_null]
+      - name: maximum_amount
+        data_tests: [not_null]
+      - name: fraud_count
+        data_tests: [not_null]
+      - name: fraud_rate
+        data_tests: [not_null]
+      - name: rolling_7d_transaction_count
+        data_tests: [not_null]
+      - name: rolling_7d_total_amount
+        data_tests: [not_null]
+      - name: rolling_7d_fraud_count
+        data_tests: [not_null]
+      - name: rolling_7d_fraud_rate
+        data_tests: [not_null]
+
+  - name: fct_terminal_daily_risk
+    description: Daily terminal fraud metrics with rolling seven-calendar-day indicators.
+    columns:
+      - name: transaction_date
+        data_tests: [not_null]
+      - name: terminal_id
+        data_tests: [not_null]
+      - name: transaction_count
+        data_tests: [not_null]
+      - name: unique_customers
+        data_tests: [not_null]
+      - name: total_amount
+        data_tests: [not_null]
+      - name: average_amount
+        data_tests: [not_null]
+      - name: fraud_count
+        data_tests: [not_null]
+      - name: fraud_rate
+        data_tests: [not_null]
+      - name: rolling_7d_transaction_count
+        data_tests: [not_null]
+      - name: rolling_7d_total_amount
+        data_tests: [not_null]
+      - name: rolling_7d_fraud_count
+        data_tests: [not_null]
+      - name: rolling_7d_fraud_rate
+        data_tests: [not_null]
+
+  - name: rpt_daily_fraud_overview
+    description: Reporting-ready daily fraud activity across customers and terminals.
+    columns:
+      - name: transaction_date
+        data_tests:
+          - not_null
+          - unique
+      - name: transaction_count
+        data_tests: [not_null]
+      - name: total_amount
+        data_tests: [not_null]
+      - name: fraud_count
+        data_tests: [not_null]
+      - name: fraud_rate
+        data_tests: [not_null]
+      - name: active_customer_count
+        data_tests: [not_null]
+      - name: customers_with_fraud
+        data_tests: [not_null]
+      - name: active_terminal_count
+        data_tests: [not_null]
+      - name: terminals_with_fraud
+        data_tests: [not_null]
