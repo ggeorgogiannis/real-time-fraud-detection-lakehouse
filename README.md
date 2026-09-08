@@ -102,6 +102,7 @@ Phase 2 is complete. DuckDB provides persistent SQL views over the Silver and Go
 
 The risk marts include observed fraud labels for analytical reporting and must not be used directly as machine-learning features. Phase 3 will introduce leakage-safe, time-aware model datasets and baseline fraud models.
 
+Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0).
 
 ### Phase 3: Fraud Detection
 
@@ -134,8 +135,6 @@ The project will use:
 * Reproducible setup and execution commands.
 
 Comments will explain business rules and non-obvious decisions rather than restating the code.
-
-## Repository Progress
 
 ## Repository Progress
 
