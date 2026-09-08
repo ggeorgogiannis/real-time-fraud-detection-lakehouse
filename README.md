@@ -190,6 +190,16 @@ ruff check .
 python -m pytest
 ```
 
+Build the DuckDB analytical database after running the batch pipeline:
+
+```bash
+fraud-lakehouse build-analytics \
+  --silver-dir data/silver \
+  --gold-dir data/gold \
+  --database-path data/analytics/fraud_lakehouse.duckdb
+```
+
+The database exposes persistent SQL views over the Silver and Gold Parquet datasets. See [`docs/duckdb_analytics.md`](docs/duckdb_analytics.md) for the view definitions and query examples.
 
 ## License
 
