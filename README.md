@@ -6,17 +6,18 @@ The project begins as a tested batch pipeline and will gradually evolve into a s
 
 ## Current Status
 
-The project is in Phase 1. The repository foundation, data contract, synthetic test fixtures, continuous integration and Bronze ingestion are now implemented.
+The project is in Phase 1. The repository foundation, data contract, synthetic test fixtures, continuous integration and the Bronze, Silver and Gold batch layers are now implemented.
 
-The next milestone is Silver validation and quarantine handling. The first complete batch pipeline will:
+The next milestone is an executable end-to-end batch command that connects the three layers and produces reproducible outputs from local transaction files.
 
-* Discover daily transaction files.
-* Ingest them without creating duplicate records.
-* Preserve raw data in a Bronze layer.
-* Validate and quarantine records in a Silver layer.
-* Create fraud features and analytical tables in a Gold layer.
-* Produce reproducible outputs from a documented command.
-* Verify its behaviour through automated tests.
+The current batch implementation can:
+
+* Discover and ingest trusted daily transaction files.
+* Preserve source records and ingestion metadata in Bronze.
+* Validate, type-convert, deduplicate and quarantine records in Silver.
+* Create transaction features and daily customer and terminal summaries in Gold.
+* Publish Parquet outputs safely and reproducibly.
+* Verify its behaviour through automated unit and integration tests.
 
 ## Why This Project
 
@@ -133,8 +134,8 @@ Comments will explain business rules and non-obvious decisions rather than resta
 * [x] Document the transaction data contract.
 * [x] Add small synthetic test fixtures.
 * [x] Implement Bronze ingestion.
-* [ ] Implement Silver validation and quarantine handling.
-* [ ] Implement Gold features and analytical tables.
+* [x] Implement Silver validation and quarantine handling.
+* [x] Implement Gold features and analytical tables.
 * [x] Add continuous integration.
 * [ ] Publish the first executable release.
 
