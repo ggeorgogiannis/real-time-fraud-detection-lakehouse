@@ -56,6 +56,29 @@ The first mart contains one row per transaction date with:
 
 The model is materialized as a table in the `analytics_marts` schema.
 
+### `fct_customer_daily_risk`
+
+Provides one row per customer and transaction date. It preserves the daily customer metrics produced by Gold and adds rolling seven-calendar-day transaction, amount, fraud-count and fraud-rate indicators.
+
+### `fct_terminal_daily_risk`
+
+Provides one row per terminal and transaction date. It preserves daily terminal activity and adds rolling seven-calendar-day transaction, amount, fraud-count and fraud-rate indicators.
+
+### `rpt_daily_fraud_overview`
+
+Provides one reporting-ready row per transaction date. It combines the daily fraud totals with:
+
+* Active customer count.
+* Customers associated with fraud.
+* Active terminal count.
+* Terminals associated with fraud.
+
+## Analytical and Machine-Learning Boundary
+
+The customer and terminal risk marts contain aggregated fraud labels. They are designed for retrospective analysis, operational reporting and data-quality verification.
+
+These models must not be used directly as machine-learning input features because doing so would expose the prediction target and create data leakage. Phase 3 will create separate time-aware feature datasets using only information available before each transaction.
+
 ## Data Tests
 
 The dbt project verifies:

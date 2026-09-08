@@ -98,9 +98,10 @@ Completed in [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 ### Phase 2: Analytical Lakehouse
 
-Introduce DuckDB and dbt Core for SQL transformations, data tests and analytical models.
+Phase 2 is complete. DuckDB provides persistent SQL views over the Silver and Gold Parquet outputs, while dbt builds staging views, a daily fraud fact table, seven-day customer and terminal risk marts, and a reporting-ready daily fraud overview. The analytical layer is covered by source, schema, uniqueness, range, reconciliation and Python integration tests.
 
-DuckDB integration, the dbt project, staging models, the daily fraud mart and automated dbt data tests are now implemented. The next milestone is expanding the analytical marts and reporting models.
+The risk marts include observed fraud labels for analytical reporting and must not be used directly as machine-learning features. Phase 3 will introduce leakage-safe, time-aware model datasets and baseline fraud models.
+
 
 ### Phase 3: Fraud Detection
 
@@ -136,22 +137,27 @@ Comments will explain business rules and non-obvious decisions rather than resta
 
 ## Repository Progress
 
-* [x] Create the public GitHub repository.
-* [x] Configure a project-local Python 3.11 environment.
-* [x] Define the initial repository structure.
-* [x] Document the transaction data contract.
-* [x] Add small synthetic test fixtures.
-* [x] Implement Bronze ingestion.
-* [x] Implement Silver validation and quarantine handling.
-* [x] Implement Gold features and analytical tables.
-* [x] Add continuous integration.
-* [x] Publish the first executable release.
-* [x] Add DuckDB analytical views.
-* [x] Create the dbt project and local DuckDB profile.
-* [x] Add dbt staging models and data tests.
-* [x] Add the daily fraud analytical mart.
-* [x] Automate dbt validation in the integration suite.
-* [ ] Expand the analytical marts and reporting models.
+## Repository Progress
+
+- [x] Create the public GitHub repository.
+- [x] Configure a project-local Python 3.11 environment.
+- [x] Define the initial repository structure.
+- [x] Document the transaction data contract.
+- [x] Add small synthetic test fixtures.
+- [x] Implement Bronze ingestion.
+- [x] Implement Silver validation and quarantine handling.
+- [x] Implement Gold features and analytical tables.
+- [x] Add continuous integration.
+- [x] Publish the first executable release.
+- [x] Add the DuckDB analytical database and views.
+- [x] Create the dbt project and local DuckDB profile.
+- [x] Add dbt staging models and data tests.
+- [x] Add the daily fraud analytical mart.
+- [x] Add seven-day customer and terminal risk marts.
+- [x] Add the reporting-ready daily fraud overview.
+- [x] Automate dbt data and integration tests.
+- [ ] Create leakage-safe model datasets.
+- [ ] Train and evaluate baseline fraud models.
 
 ## Running the Project
 
