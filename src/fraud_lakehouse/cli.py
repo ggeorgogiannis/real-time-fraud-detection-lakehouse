@@ -7,6 +7,7 @@ from pathlib import Path
 from fraud_lakehouse.analytics import build_analytics_database
 from fraud_lakehouse.ml_dataset import materialize_model_dataset
 from fraud_lakehouse.pipeline import run_batch_pipeline
+from fraud_lakehouse.training import train_and_publish_baselines
 
 LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +94,29 @@ def build_parser() -> argparse.ArgumentParser:
         "build-ml-dataset",
         help="Create chronological training, validation and test datasets.",
     )
+    training_parser = subparsers.add_parser(
+        "train-baselines",
+        help="Train and evaluate baseline fraud classifiers.",
+    )
+    training_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help="Directory containing train, validation and test Parquet files.",
+    )
+    training_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for trained model artifacts and metrics.",
+    )
+    training_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Probability threshold used for binary classification metrics.",
+    )
+    _add_log_level_argument(training_parser)
     ml_dataset_parser.add_argument(
         "--transaction-features-path",
         type=Path,
@@ -174,6 +198,23 @@ def _build_ml_dataset_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _train_baselines_command(arguments: argparse.Namespace) -> int:
+    outputs = train_and_publish_baselines(
+        dataset_dir=arguments.dataset_dir,
+        output_dir=arguments.output_dir,
+        threshold=arguments.threshold,
+    )
+
+    LOGGER.info(
+        ("baseline_models_trained dummy_model_path=%s logistic_model_path=%s metrics_path=%s"),
+        outputs.dummy_model_path,
+        outputs.logistic_model_path,
+        outputs.metrics_path,
+    )
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -192,6 +233,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if arguments.command == "build-ml-dataset":
             return _build_ml_dataset_command(arguments)
+        if arguments.command == "train-baselines":
+            return _train_baselines_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",
