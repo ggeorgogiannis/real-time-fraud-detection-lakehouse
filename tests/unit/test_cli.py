@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from fraud_lakehouse import cli
+from fraud_lakehouse.ml_dataset import ModelDatasetOutputs
 from fraud_lakehouse.pipeline import BatchPipelineResult
 
 
@@ -94,3 +95,57 @@ def test_main_builds_analytics_database(
 
     assert exit_code == 0
     assert "analytics_database_built" in caplog.text
+
+
+def test_main_builds_ml_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transaction_features_path = tmp_path / "gold" / "transaction_features.parquet"
+    output_dir = tmp_path / "model"
+    expected_train_end = datetime(2026, 1, 2, tzinfo=UTC)
+    expected_validation_end = datetime(2026, 1, 3, tzinfo=UTC)
+
+    def fake_materialize_model_dataset(
+        transaction_features_path: Path,
+        output_dir: Path,
+        *,
+        train_end: datetime,
+        validation_end: datetime,
+    ) -> ModelDatasetOutputs:
+        assert transaction_features_path == (tmp_path / "gold" / "transaction_features.parquet")
+        assert output_dir == tmp_path / "model"
+        assert train_end == expected_train_end
+        assert validation_end == expected_validation_end
+
+        return ModelDatasetOutputs(
+            train_path=output_dir / "train.parquet",
+            validation_path=output_dir / "validation.parquet",
+            test_path=output_dir / "test.parquet",
+            metadata_path=output_dir / "dataset_metadata.json",
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "materialize_model_dataset",
+        fake_materialize_model_dataset,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "build-ml-dataset",
+            "--transaction-features-path",
+            str(transaction_features_path),
+            "--output-dir",
+            str(output_dir),
+            "--train-end",
+            "2026-01-02T00:00:00Z",
+            "--validation-end",
+            "2026-01-03T00:00:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "ml_dataset_built" in caplog.text

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fraud_lakehouse.analytics import build_analytics_database
+from fraud_lakehouse.ml_dataset import materialize_model_dataset
 from fraud_lakehouse.pipeline import run_batch_pipeline
 
 LOGGER = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ def _parse_utc_datetime(value: str) -> datetime:
         ) from exc
 
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise argparse.ArgumentTypeError("The ingestion datetime must include a timezone.")
+        raise argparse.ArgumentTypeError("The datetime must include a timezone.")
 
     return parsed.astimezone(UTC)
 
@@ -88,6 +89,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path of the DuckDB database to create.",
     )
     _add_log_level_argument(analytics_parser)
+    ml_dataset_parser = subparsers.add_parser(
+        "build-ml-dataset",
+        help="Create chronological training, validation and test datasets.",
+    )
+    ml_dataset_parser.add_argument(
+        "--transaction-features-path",
+        type=Path,
+        required=True,
+        help="Path to the Gold transaction_features Parquet file.",
+    )
+    ml_dataset_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for generated model dataset artifacts.",
+    )
+    ml_dataset_parser.add_argument(
+        "--train-end",
+        type=_parse_utc_datetime,
+        required=True,
+        help="Exclusive UTC boundary for the training partition.",
+    )
+    ml_dataset_parser.add_argument(
+        "--validation-end",
+        type=_parse_utc_datetime,
+        required=True,
+        help="Exclusive UTC boundary for the validation partition.",
+    )
+    _add_log_level_argument(ml_dataset_parser)
 
     return parser
 
@@ -125,6 +155,25 @@ def _build_analytics_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _build_ml_dataset_command(arguments: argparse.Namespace) -> int:
+    outputs = materialize_model_dataset(
+        transaction_features_path=arguments.transaction_features_path,
+        output_dir=arguments.output_dir,
+        train_end=arguments.train_end,
+        validation_end=arguments.validation_end,
+    )
+
+    LOGGER.info(
+        ("ml_dataset_built train_path=%s validation_path=%s test_path=%s metadata_path=%s"),
+        outputs.train_path,
+        outputs.validation_path,
+        outputs.test_path,
+        outputs.metadata_path,
+    )
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -140,6 +189,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if arguments.command == "build-analytics":
             return _build_analytics_command(arguments)
+
+        if arguments.command == "build-ml-dataset":
+            return _build_ml_dataset_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",

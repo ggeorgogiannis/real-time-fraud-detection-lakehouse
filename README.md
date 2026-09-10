@@ -8,7 +8,7 @@ The project begins as a tested batch pipeline and will gradually evolve into a s
 
 Phase 1 is complete. The first executable local batch pipeline was published as [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.1.0).
 
-The pipeline can:
+The batch pipeline can:
 
 * Discover and ingest trusted daily transaction files.
 * Preserve source records and ingestion metadata in Bronze.
@@ -18,8 +18,9 @@ The pipeline can:
 * Run through a documented command-line interface.
 * Verify its behaviour through automated unit and integration tests.
 
-Phase 2 is now underway. DuckDB integration, the initial dbt project, staging models, the daily fraud mart and automated dbt data tests are implemented. The next milestone is expanding the analytical marts and reporting models.
+Phase 2 is complete and was published as [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0). DuckDB exposes the Silver and Gold datasets through persistent SQL views, while dbt builds tested staging models, analytical marts and reporting-ready fraud summaries.
 
+Phase 3 is underway. A leakage-safe machine-learning dataset contract and an executable command for producing chronological training, validation and test partitions are implemented. The next milestone is building the baseline preprocessing and fraud-model training workflow.
 
 ## Why This Project
 
@@ -29,18 +30,23 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 
 ## Current Architecture
 
-`Daily transaction files -> Bronze -> Silver -> Gold -> DuckDB -> dbt -> Fraud analysis and model datasets`
+`Daily transaction files -> Bronze -> Silver -> Gold`
 
-| Component  | Responsibility                                                          |
-| ---------- | ----------------------------------------------------------------------- |
-| Bronze     | Store ingested transactions with minimal changes and ingestion metadata |
-| Silver     | Apply schema checks, type conversions, deduplication and quality rules  |
-| Gold       | Create fraud features, customer summaries and analytical tables         |
-| Quarantine | Preserve rejected records together with their validation failures       |
-| DuckDB     | Expose Silver and Gold Parquet datasets through persistent SQL views    |
-| dbt        | Manage tested SQL transformations, staging models and analytical marts  |
+`Gold -> DuckDB -> dbt -> Analytical marts and reporting models`
 
-The completed batch pipeline provides a reliable foundation for the DuckDB and dbt analytical layer. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
+`Gold transaction features -> Chronological ML datasets -> Fraud models`
+
+| Component   | Responsibility                                                          |
+| ----------- | ----------------------------------------------------------------------- |
+| Bronze      | Store ingested transactions with minimal changes and ingestion metadata |
+| Silver      | Apply schema checks, type conversions, deduplication and quality rules  |
+| Gold        | Create point-in-time features, customer summaries and analytical tables |
+| Quarantine  | Preserve rejected records together with their validation failures       |
+| DuckDB      | Expose Silver and Gold Parquet datasets through persistent SQL views    |
+| dbt         | Manage tested SQL transformations, staging models and analytical marts  |
+| ML datasets | Create validated chronological training, validation and test partitions |
+
+The completed batch pipeline provides the common foundation for the analytical and machine-learning workflows. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
 
 ## Dataset
 
@@ -106,7 +112,9 @@ Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 ### Phase 3: Fraud Detection
 
-Create time-aware features, train baseline models and evaluate them using metrics appropriate for imbalanced data.
+Phase 3 is underway. The project now includes a leakage-safe machine-learning dataset contract, schema validation, chronological splitting and reproducible Parquet outputs with a metadata manifest.
+
+The next steps are to implement training-only preprocessing, train baseline fraud models and evaluate them using metrics appropriate for imbalanced data.
 
 ### Phase 4: Local Platform
 
@@ -155,12 +163,12 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Add seven-day customer and terminal risk marts.
 - [x] Add the reporting-ready daily fraud overview.
 - [x] Automate dbt data and integration tests.
-- [ ] Create leakage-safe model datasets.
+- [x] Create leakage-safe model datasets.
 - [ ] Train and evaluate baseline fraud models.
 
 ## Running the Project
 
-The batch pipeline requires Python 3.11.
+The project requires Python 3.11.
 
 Create and activate the project environment:
 
@@ -171,9 +179,11 @@ python -m ensurepip --upgrade
 python -m pip install -e ".[dev]"
 ```
 
+### Run the Batch Pipeline
+
 Place daily transaction files in `data/raw`. Input files must use the `YYYY-MM-DD.pkl` naming convention.
 
-Run the complete pipeline:
+Run the complete Bronze, Silver and Gold pipeline:
 
 ```bash
 fraud-lakehouse run \
@@ -188,7 +198,7 @@ The command creates or updates:
 * `data/quarantine`
 * `data/gold`
 
-An explicit ingestion timestamp can be supplied when a reproducible test run is required:
+An explicit ingestion timestamp can be supplied when a reproducible run is required:
 
 ```bash
 fraud-lakehouse run \
@@ -197,13 +207,30 @@ fraud-lakehouse run \
   --ingested-at-utc "2026-09-08T12:00:00Z"
 ```
 
-Run the automated checks with:
+### Build the Machine-Learning Dataset
+
+After running the batch pipeline, create chronological training, validation and test datasets from the Gold transaction features:
 
 ```bash
-ruff format --check .
-ruff check .
-python -m pytest
+fraud-lakehouse build-ml-dataset \
+  --transaction-features-path data/gold/transaction_features.parquet \
+  --output-dir data/ml \
+  --train-end "2018-08-01T00:00:00Z" \
+  --validation-end "2018-09-01T00:00:00Z"
 ```
+
+Choose boundaries that leave non-empty training, validation and test periods for the available data. Both boundaries must include a timezone.
+
+The command creates or replaces:
+
+* `data/ml/train.parquet`
+* `data/ml/validation.parquet`
+* `data/ml/test.parquet`
+* `data/ml/dataset_metadata.json`
+
+The metadata file records the model features, target column, normalized UTC boundaries, row counts and fraud counts. See [`docs/ml_dataset.md`](docs/ml_dataset.md) for the feature contract, leakage exclusions, validation rules and split semantics.
+
+### Build the Analytical Database
 
 Build the DuckDB analytical database after running the batch pipeline:
 
@@ -213,6 +240,10 @@ fraud-lakehouse build-analytics \
   --gold-dir data/gold \
   --database-path data/analytics/fraud_lakehouse.duckdb
 ```
+
+The database exposes persistent SQL views over the Silver and Gold Parquet datasets. See [`docs/duckdb_analytics.md`](docs/duckdb_analytics.md) for the view definitions and query examples.
+
+### Run the dbt Models
 
 Run the dbt analytical models and data tests:
 
@@ -224,7 +255,15 @@ dbt build \
 
 dbt creates staging views in the `analytics_staging` schema and analytical marts in the `analytics_marts` schema. See [`docs/dbt_analytics.md`](docs/dbt_analytics.md) for the model structure, schemas and test coverage.
 
-The database exposes persistent SQL views over the Silver and Gold Parquet datasets. See [`docs/duckdb_analytics.md`](docs/duckdb_analytics.md) for the view definitions and query examples.
+### Run the Automated Checks
+
+Run the complete Python formatting, linting and test suite:
+
+```bash
+ruff format --check .
+ruff check .
+python -m pytest
+```
 
 ## License
 
