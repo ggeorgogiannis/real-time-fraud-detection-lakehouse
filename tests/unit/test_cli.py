@@ -7,6 +7,7 @@ import pytest
 from fraud_lakehouse import cli
 from fraud_lakehouse.ml_dataset import ModelDatasetOutputs
 from fraud_lakehouse.pipeline import BatchPipelineResult
+from fraud_lakehouse.training import BaselineTrainingOutputs
 
 
 def test_main_runs_pipeline_and_logs_summary(
@@ -149,3 +150,50 @@ def test_main_builds_ml_dataset(
 
     assert exit_code == 0
     assert "ml_dataset_built" in caplog.text
+
+
+def test_main_trains_baseline_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dataset_dir = tmp_path / "dataset"
+    output_dir = tmp_path / "models"
+
+    def fake_train_and_publish_baselines(
+        *,
+        dataset_dir: Path,
+        output_dir: Path,
+        threshold: float,
+    ) -> BaselineTrainingOutputs:
+        assert dataset_dir == tmp_path / "dataset"
+        assert output_dir == tmp_path / "models"
+        assert threshold == 0.4
+
+        return BaselineTrainingOutputs(
+            dummy_model_path=output_dir / "dummy_prior.joblib",
+            logistic_model_path=output_dir / "logistic_regression.joblib",
+            metrics_path=output_dir / "metrics.json",
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "train_and_publish_baselines",
+        fake_train_and_publish_baselines,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "train-baselines",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-dir",
+            str(output_dir),
+            "--threshold",
+            "0.4",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "baseline_models_trained" in caplog.text

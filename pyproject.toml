@@ -21,8 +21,10 @@ keywords = [
 
 dependencies = [
     "duckdb>=1.5,<2.0",
+    "joblib>=1.4,<2.0",
     "pandas>=2.2",
     "pyarrow>=18.0",
+    "scikit-learn>=1.9,<2.0",
 ]
 
 [project.optional-dependencies]
