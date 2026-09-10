@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from xgboost import XGBClassifier
 
 from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
@@ -128,7 +129,7 @@ def test_evaluate_binary_classifier_calculates_imbalanced_metrics() -> None:
     assert metrics.true_positives == 1
 
 
-def test_train_baseline_models_evaluates_dummy_and_logistic_models() -> None:
+def test_train_baseline_models_evaluates_all_models() -> None:
     prepared = prepare_model_partitions(
         train=_partition(
             [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
@@ -149,10 +150,14 @@ def test_train_baseline_models_evaluates_dummy_and_logistic_models() -> None:
     assert [evaluation.name for evaluation in evaluations] == [
         "dummy_prior",
         "logistic_regression",
+        "xgboost",
     ]
 
     logistic_evaluation = evaluations[1]
     assert logistic_evaluation.estimator.class_weight == "balanced"
+    xgboost_evaluation = evaluations[2]
+    assert isinstance(xgboost_evaluation.estimator, XGBClassifier)
+    assert xgboost_evaluation.estimator.get_params()["scale_pos_weight"] == pytest.approx(2.0)
 
     for evaluation in evaluations:
         for metrics in (

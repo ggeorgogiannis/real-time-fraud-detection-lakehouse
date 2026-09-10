@@ -15,6 +15,7 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 
 from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
@@ -40,7 +41,7 @@ class PreparedModelPartitions:
     test: ModelInputs
 
 
-BaselineEstimator = DummyClassifier | LogisticRegression
+BaselineEstimator = DummyClassifier | LogisticRegression | XGBClassifier
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,10 @@ def train_baseline_models(
     if prepared.train.target.nunique() != 2:
         raise ValueError("The training target must contain both fraud classes.")
 
+    negative_count = int((prepared.train.target == 0).sum())
+    positive_count = int((prepared.train.target == 1).sum())
+    scale_pos_weight = negative_count / positive_count
+
     estimators: tuple[tuple[str, BaselineEstimator], ...] = (
         (
             "dummy_prior",
@@ -142,6 +147,22 @@ def train_baseline_models(
                 max_iter=1000,
                 random_state=42,
                 solver="lbfgs",
+            ),
+        ),
+        (
+            "xgboost",
+            XGBClassifier(
+                n_estimators=200,
+                max_depth=4,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                objective="binary:logistic",
+                eval_metric="aucpr",
+                scale_pos_weight=scale_pos_weight,
+                random_state=42,
+                n_jobs=1,
+                tree_method="hist",
             ),
         ),
     )

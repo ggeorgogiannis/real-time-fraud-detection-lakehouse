@@ -173,6 +173,7 @@ def test_main_trains_baseline_models(
         return BaselineTrainingOutputs(
             dummy_model_path=output_dir / "dummy_prior.joblib",
             logistic_model_path=output_dir / "logistic_regression.joblib",
+            xgboost_model_path=output_dir / "xgboost.joblib",
             metrics_path=output_dir / "metrics.json",
         )
 
@@ -197,3 +198,4 @@ def test_main_trains_baseline_models(
 
     assert exit_code == 0
     assert "baseline_models_trained" in caplog.text
+    assert f"xgboost_model_path={output_dir / 'xgboost.joblib'}" in caplog.text

@@ -206,9 +206,13 @@ def _train_baselines_command(arguments: argparse.Namespace) -> int:
     )
 
     LOGGER.info(
-        ("baseline_models_trained dummy_model_path=%s logistic_model_path=%s metrics_path=%s"),
+        (
+            "baseline_models_trained dummy_model_path=%s logistic_model_path=%s "
+            "xgboost_model_path=%s metrics_path=%s"
+        ),
         outputs.dummy_model_path,
         outputs.logistic_model_path,
+        outputs.xgboost_model_path,
         outputs.metrics_path,
     )
 
