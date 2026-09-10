@@ -20,10 +20,9 @@ The batch pipeline can:
 
 Phase 2 is complete and was published as [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0). DuckDB exposes the Silver and Gold datasets through persistent SQL views, while dbt builds tested staging models, analytical marts and reporting-ready fraud summaries.
 
-Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, a dummy prior baseline and a class-balanced logistic-regression baseline. Both models are evaluated on validation and test periods using metrics designed for imbalanced classification and are published with their fitted preprocessing pipelines.
+Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, a dummy prior baseline, class-balanced logistic regression and an imbalance-aware XGBoost classifier. All three models are evaluated on validation and test periods using metrics designed for imbalanced classification and are published with their fitted preprocessing pipelines.
 
-The next milestone is running the workflow on the complete dataset, analyzing baseline performance and selecting an appropriate fraud-classification threshold.
-
+The next milestone is running the three-model workflow on the complete dataset, comparing validation performance and selecting an appropriate fraud-classification threshold.
 
 ## Why This Project
 
@@ -115,12 +114,11 @@ Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 ### Phase 3: Fraud Detection
 
-Phase 3 is underway. The project includes a leakage-safe dataset contract, chronological training, validation and test partitions, training-only preprocessing, and reproducible baseline model artifacts.
+Phase 3 is underway. The project includes a leakage-safe dataset contract, chronological training, validation and test partitions, training-only preprocessing, and reproducible model artifacts.
 
-A dummy prior classifier provides the non-informative reference, while class-balanced logistic regression provides the first trained fraud model. Evaluation reports average precision as the primary metric together with ROC AUC, precision, recall, F1 and confusion-matrix counts.
+A dummy prior classifier provides the non-informative reference, while class-balanced logistic regression provides an interpretable statistical baseline. An imbalance-aware XGBoost classifier adds nonlinear modeling and feature interactions using a class-weight ratio calculated exclusively from the training partition.
 
-The next steps are to run the workflow on the complete chronological dataset, review the baseline results, select an operating threshold and introduce a more advanced tree-based model.
-
+Evaluation reports average precision as the primary metric together with ROC AUC, precision, recall, F1 and confusion-matrix counts. The next steps are to run the workflow on the complete chronological dataset, compare validation performance, select an operating threshold and investigate calibration and validation-based tuning.
 
 ### Phase 4: Local Platform
 
@@ -171,6 +169,7 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Automate dbt data and integration tests.
 - [x] Create leakage-safe model datasets.
 - [x] Train and evaluate baseline fraud models.
+- [x] Add an imbalance-aware XGBoost fraud model.
 
 ## Running the Project
 
@@ -236,9 +235,9 @@ The command creates or replaces:
 
 The metadata file records the model features, target column, normalized UTC boundaries, row counts and fraud counts. See [`docs/ml_dataset.md`](docs/ml_dataset.md) for the feature contract, leakage exclusions, validation rules and split semantics.
 
-### Train the Baseline Models
+### Train the Fraud Models
 
-After creating the chronological model dataset, train and evaluate the baseline fraud classifiers:
+After creating the chronological model dataset, train and evaluate the fraud classifiers:
 
 ```bash
 fraud-lakehouse train-baselines \
@@ -251,11 +250,12 @@ The command creates or replaces:
 
 * `data/models/dummy_prior.joblib`
 * `data/models/logistic_regression.joblib`
+* `data/models/xgboost.joblib`
 * `data/models/metrics.json`
 
-Each model artifact contains the fitted training preprocessor, estimator, feature contract and classification threshold. The metrics file contains separate validation and test results for both models.
+Each model artifact contains the fitted training preprocessor, estimator, feature contract and classification threshold. The metrics file contains separate validation and test results for all three models together with the installed scikit-learn and XGBoost versions.
 
-See [`docs/baseline_models.md`](docs/baseline_models.md) for the preprocessing strategy, model configuration, evaluation metrics and current limitations.
+See [`docs/baseline_models.md`](docs/baseline_models.md) for the preprocessing strategy, model configurations, class-imbalance handling, evaluation metrics and current limitations.
 
 ### Build the Analytical Database
 

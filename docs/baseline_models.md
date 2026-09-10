@@ -2,14 +2,15 @@
 
 ## Purpose
 
-The baseline modeling workflow establishes a reproducible reference for fraud-classification performance before more complex algorithms or feature engineering are introduced.
+The model training workflow establishes reproducible fraud-classification benchmarks using the leakage-safe, chronologically partitioned dataset.
 
-It trains two models against the same leakage-safe, chronologically partitioned dataset:
+It trains three models against the same feature contract:
 
 * A dummy classifier that represents a non-informative prior-probability baseline.
 * A class-balanced logistic-regression classifier that provides an interpretable statistical baseline.
+* An imbalance-aware XGBoost classifier that captures nonlinear relationships and feature interactions.
 
-More advanced models should demonstrate a meaningful improvement over these results.
+The dummy and logistic-regression models provide reference points for assessing whether the additional complexity of XGBoost produces a meaningful improvement.
 
 ## Inputs
 
@@ -34,7 +35,7 @@ The fitted preprocessing pipeline then transforms the validation and test partit
 
 This prevents information from later periods from influencing model training.
 
-## Baseline Models
+## Fraud Models
 
 ### Dummy Prior Classifier
 
@@ -52,6 +53,23 @@ The logistic-regression baseline uses:
 * A fixed random state of `42`.
 
 Class balancing gives additional weight to the minority fraud class without resampling or altering the chronological partitions.
+
+### XGBoost
+
+The XGBoost classifier uses:
+
+* 200 boosting rounds.
+* A maximum tree depth of `4`.
+* A learning rate of `0.05`.
+* Row and feature subsampling rates of `0.8`.
+* Histogram-based tree construction.
+* Average precision as its evaluation metric.
+* A fixed random state of `42`.
+* Single-threaded training for reproducible execution.
+
+Class imbalance is handled through `scale_pos_weight`, calculated as the number of legitimate training transactions divided by the number of fraudulent training transactions. This value is derived exclusively from the training partition.
+
+The initial configuration is fixed rather than tuned against the test partition. Validation-based tuning and early stopping can be introduced after performance has been measured on the complete dataset.
 
 ## Evaluation
 
@@ -98,7 +116,8 @@ The command creates or replaces:
 | ---------------------------- | -------------------------------------------------- |
 | `dummy_prior.joblib`         | Fitted dummy classifier and training preprocessor. |
 | `logistic_regression.joblib` | Fitted logistic model and training preprocessor.   |
-| `metrics.json`               | Validation and test metrics for both models.       |
+| `xgboost.joblib`             | Fitted XGBoost model and training preprocessor.    |
+| `metrics.json`               | Validation and test metrics for all three models.  |
 
 Each serialized model artifact contains:
 
@@ -110,11 +129,11 @@ Each serialized model artifact contains:
 
 The metrics file records:
 
-* The metrics schema version.
+* Metrics schema version `2`.
 * The primary evaluation metric.
 * The classification threshold.
-* The scikit-learn version.
-* Validation and test metrics for each model.
+* The installed scikit-learn and XGBoost versions.
+* Separate validation and test metrics for each model.
 
 Model files are written to temporary paths before publication. The metrics file is published last so that it describes a complete set of model artifacts.
 
@@ -122,9 +141,9 @@ Generated models and metrics remain local and are excluded from Git.
 
 ## Reproducibility
 
-The workflow uses fixed model configuration, ordered feature columns, chronological input partitions and training-only preprocessing.
+The workflow uses fixed model configurations, ordered feature columns, chronological input partitions and training-only preprocessing. XGBoost runs with a fixed random state and a single worker.
 
-Given the same input partitions and compatible dependency versions, repeated executions produce equivalent fitted models and identical metrics.
+Given the same input partitions, supported dependency versions and execution environment, repeated executions produce equivalent fitted models and identical metrics.
 
 Joblib artifacts use Python's pickle-based serialization and must only be loaded from trusted sources.
 
@@ -136,14 +155,15 @@ Meaningful model assessment requires running the workflow on the complete chrono
 
 ## Current Limitations
 
-The initial baseline workflow does not yet include:
+The current modeling workflow does not yet include:
 
 * Probability calibration.
-* Threshold optimization.
+* Validation-based threshold optimization.
 * Hyperparameter tuning.
+* Validation-based early stopping.
 * Time-series cross-validation.
 * Cost-sensitive business metrics.
-* Advanced tree-based models.
+* Model explainability or feature-attribution reports.
 * Experiment tracking.
 
-These capabilities can be added after the baseline results provide a stable reference point.
+These capabilities can be introduced after the three models have been evaluated on the complete chronological dataset.
