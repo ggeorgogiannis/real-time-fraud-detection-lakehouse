@@ -5,12 +5,12 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from fraud_lakehouse.training import train_and_publish_baselines
 
 from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
     MODEL_TARGET_COLUMN,
 )
+from fraud_lakehouse.training import train_and_publish_baselines
 
 
 def _partition(
