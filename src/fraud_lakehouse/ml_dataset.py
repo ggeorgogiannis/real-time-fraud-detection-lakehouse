@@ -1,5 +1,7 @@
+import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -58,6 +60,16 @@ class ModelDatasetSplit:
     train: pd.DataFrame
     validation: pd.DataFrame
     test: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class ModelDatasetOutputs:
+    """Paths to the published model dataset artifacts."""
+
+    train_path: Path
+    validation_path: Path
+    test_path: Path
+    metadata_path: Path
 
 
 def build_model_dataset(transaction_features: pd.DataFrame) -> pd.DataFrame:
@@ -191,6 +203,97 @@ def split_model_dataset(
     )
 
 
+def write_model_dataset_splits(
+    split: ModelDatasetSplit,
+    output_dir: Path,
+    *,
+    train_end: datetime,
+    validation_end: datetime,
+) -> ModelDatasetOutputs:
+    """Publish model dataset partitions and deterministic metadata."""
+    train_boundary = _as_utc_boundary(train_end, "train_end")
+    validation_boundary = _as_utc_boundary(
+        validation_end,
+        "validation_end",
+    )
+
+    if train_boundary >= validation_boundary:
+        raise ValueError("train_end must be earlier than validation_end.")
+
+    partitions = {
+        "train": split.train,
+        "validation": split.validation,
+        "test": split.test,
+    }
+
+    for partition_name, partition in partitions.items():
+        if partition.empty:
+            raise ValueError(f"{partition_name} partition must not be empty.")
+
+        if MODEL_TARGET_COLUMN not in partition.columns:
+            raise ValueError(f"{partition_name} partition must contain {MODEL_TARGET_COLUMN}.")
+
+    output_directory = Path(output_dir)
+    output_directory.mkdir(parents=True, exist_ok=True)
+
+    output_paths = {name: output_directory / f"{name}.parquet" for name in partitions}
+    metadata_path = output_directory / "dataset_metadata.json"
+
+    temporary_paths = {name: output_directory / f".{name}.parquet.tmp" for name in partitions}
+    temporary_metadata_path = output_directory / ".dataset_metadata.json.tmp"
+
+    metadata = {
+        "schema_version": 1,
+        "target_column": MODEL_TARGET_COLUMN,
+        "feature_columns": list(MODEL_FEATURE_COLUMNS),
+        "split_boundaries_utc": {
+            "train_end": _format_utc_timestamp(train_boundary),
+            "validation_end": _format_utc_timestamp(validation_boundary),
+        },
+        "partitions": {
+            name: {
+                "filename": output_paths[name].name,
+                "row_count": len(partition),
+                "fraud_count": int(partition[MODEL_TARGET_COLUMN].sum()),
+            }
+            for name, partition in partitions.items()
+        },
+    }
+
+    try:
+        for name, partition in partitions.items():
+            partition.to_parquet(
+                temporary_paths[name],
+                engine="pyarrow",
+                compression="snappy",
+                index=False,
+            )
+
+        temporary_metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        for name in partitions:
+            temporary_paths[name].replace(output_paths[name])
+
+        # Publish metadata last so it represents a complete set of partitions.
+        temporary_metadata_path.replace(metadata_path)
+    finally:
+        for temporary_path in (
+            *temporary_paths.values(),
+            temporary_metadata_path,
+        ):
+            temporary_path.unlink(missing_ok=True)
+
+    return ModelDatasetOutputs(
+        train_path=output_paths["train"],
+        validation_path=output_paths["validation"],
+        test_path=output_paths["test"],
+        metadata_path=metadata_path,
+    )
+
+
 def _parse_utc_timestamp_column(
     values: pd.Series,
     column_name: str,
@@ -210,3 +313,8 @@ def _as_utc_boundary(value: datetime, name: str) -> pd.Timestamp:
         raise ValueError(f"{name} must be timezone-aware.")
 
     return timestamp.tz_convert("UTC")
+
+
+def _format_utc_timestamp(value: pd.Timestamp) -> str:
+    """Format a UTC timestamp consistently for metadata."""
+    return value.isoformat().replace("+00:00", "Z")
