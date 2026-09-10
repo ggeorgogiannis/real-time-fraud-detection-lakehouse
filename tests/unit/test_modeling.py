@@ -6,7 +6,11 @@ from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
     MODEL_TARGET_COLUMN,
 )
-from fraud_lakehouse.modeling import prepare_model_partitions
+from fraud_lakehouse.modeling import (
+    evaluate_binary_classifier,
+    prepare_model_partitions,
+    train_baseline_models,
+)
 
 
 def _partition(
@@ -103,4 +107,80 @@ def test_prepare_model_partitions_rejects_missing_columns() -> None:
             train=train,
             validation=_partition([40.0, 50.0], [0, 1]),
             test=_partition([60.0, 70.0], [1, 0]),
+        )
+
+
+def test_evaluate_binary_classifier_calculates_imbalanced_metrics() -> None:
+    metrics = evaluate_binary_classifier(
+        target=pd.Series([0, 0, 1, 1]),
+        fraud_probability=np.array([0.1, 0.7, 0.8, 0.4]),
+        threshold=0.5,
+    )
+
+    assert metrics.average_precision == pytest.approx(5.0 / 6.0)
+    assert metrics.roc_auc == pytest.approx(0.75)
+    assert metrics.precision == pytest.approx(0.5)
+    assert metrics.recall == pytest.approx(0.5)
+    assert metrics.f1_score == pytest.approx(0.5)
+    assert metrics.true_negatives == 1
+    assert metrics.false_positives == 1
+    assert metrics.false_negatives == 1
+    assert metrics.true_positives == 1
+
+
+def test_train_baseline_models_evaluates_dummy_and_logistic_models() -> None:
+    prepared = prepare_model_partitions(
+        train=_partition(
+            [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            [0, 0, 0, 1, 0, 1],
+        ),
+        validation=_partition(
+            [15.0, 25.0, 45.0, 55.0],
+            [0, 0, 1, 1],
+        ),
+        test=_partition(
+            [12.0, 22.0, 42.0, 62.0],
+            [0, 0, 1, 1],
+        ),
+    )
+
+    evaluations = train_baseline_models(prepared)
+
+    assert [evaluation.name for evaluation in evaluations] == [
+        "dummy_prior",
+        "logistic_regression",
+    ]
+
+    logistic_evaluation = evaluations[1]
+    assert logistic_evaluation.estimator.class_weight == "balanced"
+
+    for evaluation in evaluations:
+        for metrics in (
+            evaluation.validation_metrics,
+            evaluation.test_metrics,
+        ):
+            assert 0.0 <= metrics.average_precision <= 1.0
+            assert 0.0 <= metrics.roc_auc <= 1.0
+            assert 0.0 <= metrics.precision <= 1.0
+            assert 0.0 <= metrics.recall <= 1.0
+            assert 0.0 <= metrics.f1_score <= 1.0
+
+            classified_rows = (
+                metrics.true_negatives
+                + metrics.false_positives
+                + metrics.false_negatives
+                + metrics.true_positives
+            )
+            assert classified_rows == 4
+
+
+def test_evaluate_binary_classifier_rejects_invalid_probabilities() -> None:
+    with pytest.raises(
+        ValueError,
+        match="fraud_probability must contain values between 0 and 1",
+    ):
+        evaluate_binary_classifier(
+            target=pd.Series([0, 1]),
+            fraud_probability=np.array([0.2, 1.2]),
+            threshold=0.5,
         )
