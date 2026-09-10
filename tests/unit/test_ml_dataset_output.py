@@ -7,6 +7,7 @@ from pandas.testing import assert_frame_equal
 from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
     ModelDatasetSplit,
+    materialize_model_dataset,
     write_model_dataset_splits,
 )
 
@@ -150,3 +151,42 @@ def test_write_model_dataset_splits_is_repeatable(tmp_path) -> None:
 
     assert second_outputs.metadata_path.read_bytes() == first_metadata
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_materialize_model_dataset_reads_gold_and_publishes_splits(
+    tmp_path,
+) -> None:
+    source_split = _model_dataset_split()
+    transaction_features = pd.concat(
+        [
+            source_split.test,
+            source_split.train,
+            source_split.validation,
+        ],
+        ignore_index=True,
+    )
+
+    gold_dir = tmp_path / "gold"
+    gold_dir.mkdir()
+    transaction_features_path = gold_dir / "transaction_features.parquet"
+    transaction_features.to_parquet(
+        transaction_features_path,
+        engine="pyarrow",
+        index=False,
+    )
+
+    outputs = materialize_model_dataset(
+        transaction_features_path,
+        tmp_path / "model",
+        train_end=datetime(2026, 1, 2, tzinfo=UTC),
+        validation_end=datetime(2026, 1, 3, tzinfo=UTC),
+    )
+
+    train = pd.read_parquet(outputs.train_path)
+    validation = pd.read_parquet(outputs.validation_path)
+    test = pd.read_parquet(outputs.test_path)
+
+    assert train["transaction_id"].tolist() == [1, 2]
+    assert validation["transaction_id"].tolist() == [3, 4]
+    assert test["transaction_id"].tolist() == [5, 6]
+    assert outputs.metadata_path.is_file()

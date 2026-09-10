@@ -203,6 +203,38 @@ def split_model_dataset(
     )
 
 
+def materialize_model_dataset(
+    transaction_features_path: Path,
+    output_dir: Path,
+    *,
+    train_end: datetime,
+    validation_end: datetime,
+) -> ModelDatasetOutputs:
+    """Build, split and publish a model dataset from Gold features."""
+    source_path = Path(transaction_features_path)
+
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Gold transaction features file not found: {source_path}")
+
+    transaction_features = pd.read_parquet(
+        source_path,
+        engine="pyarrow",
+    )
+    dataset = build_model_dataset(transaction_features)
+    split = split_model_dataset(
+        dataset,
+        train_end=train_end,
+        validation_end=validation_end,
+    )
+
+    return write_model_dataset_splits(
+        split,
+        output_dir,
+        train_end=train_end,
+        validation_end=validation_end,
+    )
+
+
 def write_model_dataset_splits(
     split: ModelDatasetSplit,
     output_dir: Path,
