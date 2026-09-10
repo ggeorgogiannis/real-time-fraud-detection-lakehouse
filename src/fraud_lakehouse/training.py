@@ -5,6 +5,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 import sklearn
+import xgboost
 from sklearn.pipeline import Pipeline
 
 from fraud_lakehouse.ml_dataset import (
@@ -35,6 +36,7 @@ class BaselineTrainingOutputs:
 
     dummy_model_path: Path
     logistic_model_path: Path
+    xgboost_model_path: Path
     metrics_path: Path
 
 
@@ -81,12 +83,12 @@ def train_and_publish_baselines(
     temporary_metrics_path = output_directory / ".metrics.json.tmp"
 
     metrics = {
-        "schema_version": 1,
+        "schema_version": 2,
         "primary_metric": "average_precision",
         "threshold": float(threshold),
-        "library": {
-            "name": "scikit-learn",
-            "version": sklearn.__version__,
+        "libraries": {
+            "scikit-learn": sklearn.__version__,
+            "xgboost": xgboost.__version__,
         },
         "models": {
             evaluation.name: {
@@ -137,5 +139,6 @@ def train_and_publish_baselines(
     return BaselineTrainingOutputs(
         dummy_model_path=model_paths["dummy_prior"],
         logistic_model_path=model_paths["logistic_regression"],
+        xgboost_model_path=model_paths["xgboost"],
         metrics_path=metrics_path,
     )

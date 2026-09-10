@@ -5,6 +5,8 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
+import sklearn
+import xgboost
 
 from fraud_lakehouse.ml_dataset import (
     MODEL_FEATURE_COLUMNS,
@@ -85,16 +87,22 @@ def test_train_and_publish_baselines_writes_models_and_metrics(
 
     assert outputs.dummy_model_path == output_dir / "dummy_prior.joblib"
     assert outputs.logistic_model_path == (output_dir / "logistic_regression.joblib")
+    assert outputs.xgboost_model_path == output_dir / "xgboost.joblib"
     assert outputs.metrics_path == output_dir / "metrics.json"
 
     metrics = json.loads(outputs.metrics_path.read_text(encoding="utf-8"))
 
-    assert metrics["schema_version"] == 1
+    assert metrics["schema_version"] == 2
     assert metrics["threshold"] == 0.5
     assert metrics["primary_metric"] == "average_precision"
+    assert metrics["libraries"] == {
+        "scikit-learn": sklearn.__version__,
+        "xgboost": xgboost.__version__,
+    }
     assert set(metrics["models"]) == {
         "dummy_prior",
         "logistic_regression",
+        "xgboost",
     }
 
     for model_metrics in metrics["models"].values():
@@ -107,11 +115,23 @@ def test_train_and_publish_baselines_writes_models_and_metrics(
     transformed = artifact.preprocessor.transform(test_partition.loc[:, MODEL_FEATURE_COLUMNS])
     probabilities = artifact.estimator.predict_proba(transformed)[:, 1]
 
+    xgboost_artifact = joblib.load(outputs.xgboost_model_path)
+    xgboost_transformed = xgboost_artifact.preprocessor.transform(
+        test_partition.loc[:, MODEL_FEATURE_COLUMNS]
+    )
+    xgboost_probabilities = xgboost_artifact.estimator.predict_proba(xgboost_transformed)[:, 1]
+
     assert artifact.feature_columns == MODEL_FEATURE_COLUMNS
     assert artifact.target_column == MODEL_TARGET_COLUMN
     assert artifact.threshold == 0.5
     assert probabilities.shape == (4,)
     assert np.isfinite(probabilities).all()
+
+    assert xgboost_artifact.feature_columns == MODEL_FEATURE_COLUMNS
+    assert xgboost_artifact.target_column == MODEL_TARGET_COLUMN
+    assert xgboost_artifact.threshold == 0.5
+    assert xgboost_probabilities.shape == (4,)
+    assert np.isfinite(xgboost_probabilities).all()
 
     first_metrics = outputs.metrics_path.read_bytes()
 
