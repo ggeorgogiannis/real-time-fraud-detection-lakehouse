@@ -3,7 +3,10 @@ import pandas as pd
 import pytest
 
 from fraud_lakehouse.thresholds import (
+    CapacityConstrainedThreshold,
+    ModelThresholdCandidate,
     select_capacity_constrained_threshold,
+    select_model_threshold_policy,
 )
 
 
@@ -181,3 +184,133 @@ def test_select_threshold_rejects_invalid_probabilities(
             fraud_probability,
             daily_card_capacity=1,
         )
+
+
+def test_select_model_policy_prioritizes_card_day_recall() -> None:
+    logistic_metrics = CapacityConstrainedThreshold(
+        threshold=0.80,
+        daily_card_capacity=100,
+        card_alert_count=200,
+        mean_daily_card_alerts=50.0,
+        max_daily_card_alerts=100,
+        budget_exceeded_days=0,
+        card_day_precision=0.60,
+        card_day_recall=0.50,
+        card_day_f1=0.545,
+        true_negative_card_days=800,
+        false_positive_card_days=80,
+        false_negative_card_days=50,
+        true_positive_card_days=50,
+    )
+    xgboost_metrics = CapacityConstrainedThreshold(
+        threshold=0.90,
+        daily_card_capacity=100,
+        card_alert_count=220,
+        mean_daily_card_alerts=55.0,
+        max_daily_card_alerts=100,
+        budget_exceeded_days=0,
+        card_day_precision=0.50,
+        card_day_recall=0.60,
+        card_day_f1=0.545,
+        true_negative_card_days=780,
+        false_positive_card_days=100,
+        false_negative_card_days=40,
+        true_positive_card_days=60,
+    )
+
+    selected = select_model_threshold_policy(
+        [
+            ModelThresholdCandidate(
+                model_name="logistic_regression",
+                average_precision=0.40,
+                threshold_metrics=logistic_metrics,
+            ),
+            ModelThresholdCandidate(
+                model_name="xgboost",
+                average_precision=0.30,
+                threshold_metrics=xgboost_metrics,
+            ),
+        ]
+    )
+
+    assert selected.model_name == "xgboost"
+
+
+def _policy_metrics(
+    *,
+    card_day_recall: float,
+    card_day_precision: float,
+) -> CapacityConstrainedThreshold:
+    return CapacityConstrainedThreshold(
+        threshold=0.85,
+        daily_card_capacity=100,
+        card_alert_count=200,
+        mean_daily_card_alerts=50.0,
+        max_daily_card_alerts=100,
+        budget_exceeded_days=0,
+        card_day_precision=card_day_precision,
+        card_day_recall=card_day_recall,
+        card_day_f1=0.50,
+        true_negative_card_days=800,
+        false_positive_card_days=100,
+        false_negative_card_days=50,
+        true_positive_card_days=50,
+    )
+
+
+def test_select_model_policy_uses_card_precision_as_first_tiebreaker() -> None:
+    selected = select_model_threshold_policy(
+        [
+            ModelThresholdCandidate(
+                model_name="logistic_regression",
+                average_precision=0.50,
+                threshold_metrics=_policy_metrics(
+                    card_day_recall=0.60,
+                    card_day_precision=0.40,
+                ),
+            ),
+            ModelThresholdCandidate(
+                model_name="xgboost",
+                average_precision=0.30,
+                threshold_metrics=_policy_metrics(
+                    card_day_recall=0.60,
+                    card_day_precision=0.50,
+                ),
+            ),
+        ]
+    )
+
+    assert selected.model_name == "xgboost"
+
+
+def test_select_model_policy_uses_average_precision_as_second_tiebreaker() -> None:
+    selected = select_model_threshold_policy(
+        [
+            ModelThresholdCandidate(
+                model_name="logistic_regression",
+                average_precision=0.40,
+                threshold_metrics=_policy_metrics(
+                    card_day_recall=0.60,
+                    card_day_precision=0.50,
+                ),
+            ),
+            ModelThresholdCandidate(
+                model_name="xgboost",
+                average_precision=0.45,
+                threshold_metrics=_policy_metrics(
+                    card_day_recall=0.60,
+                    card_day_precision=0.50,
+                ),
+            ),
+        ]
+    )
+
+    assert selected.model_name == "xgboost"
+
+
+def test_select_model_policy_rejects_empty_candidates() -> None:
+    with pytest.raises(
+        ValueError,
+        match="candidates must contain at least one model",
+    ):
+        select_model_threshold_policy([])

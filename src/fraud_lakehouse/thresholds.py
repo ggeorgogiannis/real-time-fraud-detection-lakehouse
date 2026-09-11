@@ -26,6 +26,51 @@ class CapacityConstrainedThreshold:
     true_positive_card_days: int
 
 
+@dataclass(frozen=True)
+class ModelThresholdCandidate:
+    """Validation result for one model and its selected threshold."""
+
+    model_name: str
+    average_precision: float
+    threshold_metrics: CapacityConstrainedThreshold
+
+
+def select_model_threshold_policy(
+    candidates: Sequence[ModelThresholdCandidate],
+) -> ModelThresholdCandidate:
+    """Select the validation policy with the strongest card-day recall."""
+    candidate_list = tuple(candidates)
+
+    if not candidate_list:
+        raise ValueError("candidates must contain at least one model.")
+
+    model_names = [candidate.model_name for candidate in candidate_list]
+    if any(not model_name.strip() for model_name in model_names):
+        raise ValueError("model_name must not be empty.")
+
+    if len(model_names) != len(set(model_names)):
+        raise ValueError("model_name values must be unique.")
+
+    for candidate in candidate_list:
+        if not np.isfinite(candidate.average_precision) or not (
+            0.0 <= candidate.average_precision <= 1.0
+        ):
+            raise ValueError("average_precision must be between 0 and 1.")
+
+        if candidate.threshold_metrics.budget_exceeded_days:
+            raise ValueError("All threshold candidates must respect daily capacity.")
+
+    return min(
+        candidate_list,
+        key=lambda candidate: (
+            -candidate.threshold_metrics.card_day_recall,
+            -candidate.threshold_metrics.card_day_precision,
+            -candidate.average_precision,
+            candidate.model_name,
+        ),
+    )
+
+
 def select_capacity_constrained_threshold(
     partition: pd.DataFrame,
     fraud_probability: Sequence[float],
