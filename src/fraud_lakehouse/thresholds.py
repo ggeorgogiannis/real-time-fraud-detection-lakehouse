@@ -9,7 +9,7 @@ from fraud_lakehouse.ml_dataset import MODEL_TARGET_COLUMN
 
 @dataclass(frozen=True)
 class CapacityConstrainedThreshold:
-    """Validation metrics for a threshold constrained by daily capacity."""
+    """Card-day metrics for a threshold and daily alert capacity."""
 
     threshold: float
     daily_card_capacity: int
@@ -78,9 +78,84 @@ def select_capacity_constrained_threshold(
     daily_card_capacity: int,
 ) -> CapacityConstrainedThreshold:
     """Choose the lowest threshold that respects capacity every day."""
+    _validate_daily_card_capacity(daily_card_capacity)
+    card_days = _build_card_days(
+        partition,
+        fraud_probability,
+    )
+
+    capacity_boundaries = []
+
+    for _, daily_cards in card_days.groupby(
+        "transaction_date",
+        sort=True,
+    ):
+        if len(daily_cards) <= daily_card_capacity:
+            continue
+
+        descending_probability = np.sort(daily_cards["fraud_probability"].to_numpy())[::-1]
+        capacity_boundaries.append(descending_probability[daily_card_capacity])
+
+    if capacity_boundaries:
+        threshold = float(
+            np.nextafter(
+                max(capacity_boundaries),
+                np.inf,
+            )
+        )
+    else:
+        threshold = 0.0
+
+    if threshold > 1.0:
+        raise ValueError(
+            "No threshold between 0 and 1 can satisfy the daily "
+            "card capacity because too many cards share "
+            "probability 1."
+        )
+
+    return _evaluate_card_days(
+        card_days,
+        threshold=threshold,
+        daily_card_capacity=daily_card_capacity,
+    )
+
+
+def evaluate_card_day_threshold(
+    partition: pd.DataFrame,
+    fraud_probability: Sequence[float],
+    *,
+    threshold: float,
+    daily_card_capacity: int,
+) -> CapacityConstrainedThreshold:
+    """Evaluate a fixed threshold without selecting a new one."""
+    _validate_daily_card_capacity(daily_card_capacity)
+
+    if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("threshold must be between 0 and 1.")
+
+    card_days = _build_card_days(
+        partition,
+        fraud_probability,
+    )
+
+    return _evaluate_card_days(
+        card_days,
+        threshold=float(threshold),
+        daily_card_capacity=daily_card_capacity,
+    )
+
+
+def _validate_daily_card_capacity(
+    daily_card_capacity: int,
+) -> None:
     if daily_card_capacity <= 0:
         raise ValueError("daily_card_capacity must be greater than zero.")
 
+
+def _build_card_days(
+    partition: pd.DataFrame,
+    fraud_probability: Sequence[float],
+) -> pd.DataFrame:
     required_columns = {
         "transaction_date",
         "customer_id",
@@ -137,7 +212,7 @@ def select_capacity_constrained_threshold(
         }
     )
 
-    card_days = (
+    return (
         predictions.groupby(
             ["transaction_date", "customer_id"],
             as_index=False,
@@ -156,43 +231,23 @@ def select_capacity_constrained_threshold(
         .reset_index(drop=True)
     )
 
-    capacity_boundaries = []
 
-    for _, daily_cards in card_days.groupby(
-        "transaction_date",
-        sort=True,
-    ):
-        if len(daily_cards) <= daily_card_capacity:
-            continue
+def _evaluate_card_days(
+    card_days: pd.DataFrame,
+    *,
+    threshold: float,
+    daily_card_capacity: int,
+) -> CapacityConstrainedThreshold:
+    evaluated_card_days = card_days.copy()
+    evaluated_card_days["is_alert"] = evaluated_card_days["fraud_probability"].ge(threshold)
 
-        descending_probability = np.sort(daily_cards["fraud_probability"].to_numpy())[::-1]
-        capacity_boundaries.append(descending_probability[daily_card_capacity])
-
-    if capacity_boundaries:
-        threshold = float(
-            np.nextafter(
-                max(capacity_boundaries),
-                np.inf,
-            )
-        )
-    else:
-        threshold = 0.0
-
-    if threshold > 1.0:
-        raise ValueError(
-            "No threshold between 0 and 1 can satisfy the daily "
-            "card capacity because too many cards share probability 1."
-        )
-
-    card_days["is_alert"] = card_days["fraud_probability"].ge(threshold)
-
-    daily_alerts = card_days.groupby(
+    daily_alerts = evaluated_card_days.groupby(
         "transaction_date",
         sort=True,
     )["is_alert"].sum()
 
-    actual = card_days[MODEL_TARGET_COLUMN].eq(1)
-    predicted = card_days["is_alert"]
+    actual = evaluated_card_days[MODEL_TARGET_COLUMN].eq(1)
+    predicted = evaluated_card_days["is_alert"]
 
     true_positives = int((actual & predicted).sum())
     false_positives = int((~actual & predicted).sum())

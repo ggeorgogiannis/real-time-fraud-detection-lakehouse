@@ -65,7 +65,7 @@ def optimize_and_publish_thresholds(
     transaction_metrics_by_model = {}
 
     for model_name, model_path in model_paths.items():
-        artifact = _load_tuned_artifact(model_path)
+        artifact = load_tuned_artifact(model_path)
         transformed_features = artifact.preprocessor.transform(validation_inputs.features)
         probabilities = fraud_probability(
             artifact.estimator,
@@ -129,7 +129,7 @@ def optimize_and_publish_thresholds(
     )
 
 
-def _load_tuned_artifact(
+def load_tuned_artifact(
     model_path: Path,
 ) -> TunedModelArtifact:
     artifact = joblib.load(model_path)
