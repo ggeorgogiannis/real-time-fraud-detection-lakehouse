@@ -5,6 +5,9 @@ from fraud_lakehouse.tuning import (
     build_prequential_folds,
     card_precision_at_k,
     sample_hyperparameter_candidates,
+    evaluate_hyperparameter_candidate,
+    HyperparameterCandidateEvaluation,
+    select_best_hyperparameter_candidate,
 )
 
 
@@ -220,3 +223,105 @@ def test_sample_hyperparameter_candidates_rejects_invalid_requests() -> None:
             "xgboost",
             n_iter=0,
         )
+
+
+def test_evaluate_hyperparameter_candidate_across_prequential_folds() -> None:
+    rows = []
+
+    for day_offset in range(9):
+        transaction_day = pd.Timestamp("2026-01-01T00:00:00Z") + pd.Timedelta(days=day_offset)
+
+        for target in (0, 1):
+            timestamp = transaction_day + pd.Timedelta(hours=target)
+
+            rows.append(
+                {
+                    "tx_datetime": timestamp,
+                    "transaction_date": timestamp.date(),
+                    "customer_id": day_offset * 2 + target,
+                    "tx_amount": 10.0 + (90.0 * target),
+                    "transaction_hour": timestamp.hour,
+                    "day_of_week": timestamp.dayofweek,
+                    "is_weekend": int(timestamp.dayofweek >= 5),
+                    "is_night": 1,
+                    "customer_previous_transaction_count": day_offset,
+                    "customer_previous_mean_amount": 50.0,
+                    "amount_to_customer_previous_mean": 0.2 + (1.8 * target),
+                    "terminal_previous_transaction_count": day_offset,
+                    "tx_fraud": target,
+                }
+            )
+
+    partition = pd.DataFrame(rows)
+    folds = build_prequential_folds(
+        partition,
+        n_folds=2,
+        assessment_days=2,
+        gap_days=1,
+    )
+    parameters = {
+        "C": 1.0,
+        "class_weight": "balanced",
+    }
+
+    result = evaluate_hyperparameter_candidate(
+        partition,
+        folds,
+        model_name="logistic_regression",
+        parameters=parameters,
+        card_precision_k=1,
+        random_state=42,
+    )
+
+    assert result.model_name == "logistic_regression"
+    assert result.parameters == parameters
+    assert len(result.fold_metrics) == 2
+    assert result.mean_average_precision == pytest.approx(1.0)
+    assert result.mean_roc_auc == pytest.approx(1.0)
+    assert result.mean_card_precision_at_k == pytest.approx(1.0)
+
+    for fold_metrics in result.fold_metrics:
+        assert fold_metrics.average_precision == pytest.approx(1.0)
+        assert fold_metrics.roc_auc == pytest.approx(1.0)
+        assert fold_metrics.card_precision_at_k == pytest.approx(1.0)
+
+
+def test_select_best_candidate_prioritizes_average_precision_then_cp_at_k() -> None:
+    candidates = (
+        HyperparameterCandidateEvaluation(
+            model_name="xgboost",
+            parameters={"candidate": "high_cp_lower_ap"},
+            fold_metrics=(),
+            mean_average_precision=0.70,
+            mean_roc_auc=0.99,
+            mean_card_precision_at_k=0.90,
+        ),
+        HyperparameterCandidateEvaluation(
+            model_name="xgboost",
+            parameters={"candidate": "lower_cp"},
+            fold_metrics=(),
+            mean_average_precision=0.80,
+            mean_roc_auc=0.95,
+            mean_card_precision_at_k=0.40,
+        ),
+        HyperparameterCandidateEvaluation(
+            model_name="xgboost",
+            parameters={"candidate": "selected"},
+            fold_metrics=(),
+            mean_average_precision=0.80,
+            mean_roc_auc=0.50,
+            mean_card_precision_at_k=0.50,
+        ),
+    )
+
+    selected = select_best_hyperparameter_candidate(candidates)
+
+    assert selected.parameters["candidate"] == "selected"
+
+
+def test_select_best_candidate_rejects_empty_sequence() -> None:
+    with pytest.raises(
+        ValueError,
+        match="candidates must contain at least one evaluation",
+    ):
+        select_best_hyperparameter_candidate(())

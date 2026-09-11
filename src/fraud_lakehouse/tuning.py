@@ -1,9 +1,19 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterSampler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score, roc_auc_score
+from xgboost import XGBClassifier
+
+from fraud_lakehouse.modeling import (
+    BaselineEstimator,
+    build_model_preprocessor,
+    extract_model_inputs,
+    fraud_probability,
+)
 
 from fraud_lakehouse.ml_dataset import MODEL_TARGET_COLUMN
 
@@ -38,6 +48,28 @@ class PrequentialFold:
     train_end: pd.Timestamp
     assessment_start: pd.Timestamp
     assessment_end: pd.Timestamp
+
+
+@dataclass(frozen=True)
+class HyperparameterFoldMetrics:
+    """Threshold-free metrics from one prequential assessment fold."""
+
+    fold_number: int
+    average_precision: float
+    roc_auc: float
+    card_precision_at_k: float
+
+
+@dataclass(frozen=True)
+class HyperparameterCandidateEvaluation:
+    """Aggregated prequential evaluation of one model configuration."""
+
+    model_name: str
+    parameters: dict[str, object]
+    fold_metrics: tuple[HyperparameterFoldMetrics, ...]
+    mean_average_precision: float
+    mean_roc_auc: float
+    mean_card_precision_at_k: float
 
 
 def build_prequential_folds(
@@ -127,6 +159,142 @@ def sample_hyperparameter_candidates(
     )
 
     return tuple(dict(candidate) for candidate in sampled)
+
+
+def evaluate_hyperparameter_candidate(
+    partition: pd.DataFrame,
+    folds: Sequence[PrequentialFold],
+    *,
+    model_name: str,
+    parameters: Mapping[str, object],
+    card_precision_k: int,
+    random_state: int = 42,
+) -> HyperparameterCandidateEvaluation:
+    """Evaluate one model configuration across prequential folds."""
+    if model_name not in _HYPERPARAMETER_SPACES:
+        supported = ", ".join(sorted(_HYPERPARAMETER_SPACES))
+        raise ValueError(f"Unsupported model_name: {model_name}. Supported models: {supported}.")
+
+    if not folds:
+        raise ValueError("folds must contain at least one fold.")
+
+    candidate_parameters = dict(parameters)
+    fold_metrics = []
+
+    for fold_number, fold in enumerate(folds, start=1):
+        training_partition = partition.iloc[list(fold.train_indices)]
+        assessment_partition = partition.iloc[list(fold.assessment_indices)]
+
+        training_inputs = extract_model_inputs(training_partition)
+        assessment_inputs = extract_model_inputs(assessment_partition)
+
+        if training_inputs.target.nunique() != 2:
+            raise ValueError("Every fold training target must contain both fraud classes.")
+
+        if assessment_inputs.target.nunique() != 2:
+            raise ValueError("Every fold assessment target must contain both fraud classes.")
+
+        preprocessor = build_model_preprocessor()
+        training_features = preprocessor.fit_transform(
+            training_inputs.features,
+            training_inputs.target,
+        )
+        assessment_features = preprocessor.transform(assessment_inputs.features)
+
+        estimator = _build_tuning_estimator(
+            model_name=model_name,
+            parameters=candidate_parameters,
+            training_target=training_inputs.target,
+            random_state=random_state,
+        )
+        estimator.fit(
+            training_features,
+            training_inputs.target,
+        )
+
+        assessment_probability = fraud_probability(
+            estimator,
+            assessment_features,
+        )
+
+        fold_metrics.append(
+            HyperparameterFoldMetrics(
+                fold_number=fold_number,
+                average_precision=float(
+                    average_precision_score(
+                        assessment_inputs.target,
+                        assessment_probability,
+                    )
+                ),
+                roc_auc=float(
+                    roc_auc_score(
+                        assessment_inputs.target,
+                        assessment_probability,
+                    )
+                ),
+                card_precision_at_k=card_precision_at_k(
+                    assessment_partition,
+                    assessment_probability,
+                    k=card_precision_k,
+                ),
+            )
+        )
+
+    metrics = tuple(fold_metrics)
+
+    return HyperparameterCandidateEvaluation(
+        model_name=model_name,
+        parameters=candidate_parameters,
+        fold_metrics=metrics,
+        mean_average_precision=float(np.mean([metric.average_precision for metric in metrics])),
+        mean_roc_auc=float(np.mean([metric.roc_auc for metric in metrics])),
+        mean_card_precision_at_k=float(np.mean([metric.card_precision_at_k for metric in metrics])),
+    )
+
+
+def select_best_hyperparameter_candidate(
+    candidates: Sequence[HyperparameterCandidateEvaluation],
+) -> HyperparameterCandidateEvaluation:
+    """Select by mean AP, using mean Card Precision at k as a tie-breaker."""
+    if not candidates:
+        raise ValueError("candidates must contain at least one evaluation.")
+
+    return max(
+        candidates,
+        key=lambda candidate: (
+            candidate.mean_average_precision,
+            candidate.mean_card_precision_at_k,
+        ),
+    )
+
+
+def _build_tuning_estimator(
+    *,
+    model_name: str,
+    parameters: Mapping[str, object],
+    training_target: pd.Series,
+    random_state: int,
+) -> BaselineEstimator:
+    if model_name == "logistic_regression":
+        return LogisticRegression(
+            max_iter=1000,
+            random_state=random_state,
+            solver="lbfgs",
+            **parameters,
+        )
+
+    negative_count = int(training_target.eq(0).sum())
+    positive_count = int(training_target.eq(1).sum())
+
+    return XGBClassifier(
+        objective="binary:logistic",
+        eval_metric="aucpr",
+        scale_pos_weight=negative_count / positive_count,
+        random_state=random_state,
+        n_jobs=1,
+        tree_method="hist",
+        **parameters,
+    )
 
 
 def card_precision_at_k(
