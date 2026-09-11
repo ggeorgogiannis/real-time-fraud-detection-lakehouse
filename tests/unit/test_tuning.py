@@ -1,6 +1,7 @@
 import pandas as pd
 import pytest
 
+import fraud_lakehouse.tuning as tuning
 from fraud_lakehouse.tuning import (
     HyperparameterCandidateEvaluation,
     build_prequential_folds,
@@ -325,3 +326,87 @@ def test_select_best_candidate_rejects_empty_sequence() -> None:
         match="candidates must contain at least one evaluation",
     ):
         select_best_hyperparameter_candidate(())
+
+
+def test_run_hyperparameter_search_evaluates_and_selects_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parameter_candidates = (
+        {"C": 0.1, "class_weight": "balanced"},
+        {"C": 1.0, "class_weight": "balanced"},
+    )
+    evaluations = (
+        HyperparameterCandidateEvaluation(
+            model_name="logistic_regression",
+            parameters=parameter_candidates[0],
+            fold_metrics=(),
+            mean_average_precision=0.70,
+            mean_roc_auc=0.80,
+            mean_card_precision_at_k=0.40,
+        ),
+        HyperparameterCandidateEvaluation(
+            model_name="logistic_regression",
+            parameters=parameter_candidates[1],
+            fold_metrics=(),
+            mean_average_precision=0.75,
+            mean_roc_auc=0.79,
+            mean_card_precision_at_k=0.45,
+        ),
+    )
+
+    def fake_sample(
+        model_name: str,
+        *,
+        n_iter: int,
+        random_state: int,
+    ) -> tuple[dict[str, object], ...]:
+        assert model_name == "logistic_regression"
+        assert n_iter == 2
+        assert random_state == 17
+        return parameter_candidates
+
+    def fake_evaluate(
+        partition: pd.DataFrame,
+        folds: object,
+        *,
+        model_name: str,
+        parameters: dict[str, object],
+        card_precision_k: int,
+        random_state: int,
+    ) -> HyperparameterCandidateEvaluation:
+        del partition, folds
+
+        assert model_name == "logistic_regression"
+        assert card_precision_k == 100
+        assert random_state == 17
+
+        return evaluations[parameter_candidates.index(parameters)]
+
+    monkeypatch.setattr(
+        tuning,
+        "sample_hyperparameter_candidates",
+        fake_sample,
+    )
+    monkeypatch.setattr(
+        tuning,
+        "evaluate_hyperparameter_candidate",
+        fake_evaluate,
+    )
+
+    result = tuning.run_hyperparameter_search(
+        pd.DataFrame(),
+        (),
+        model_name="logistic_regression",
+        n_iter=2,
+        card_precision_k=100,
+        random_state=17,
+    )
+
+    assert result.model_name == "logistic_regression"
+    assert result.primary_metric == "average_precision"
+    assert result.secondary_metric == "card_precision_at_k"
+    assert result.n_iter == 2
+    assert result.card_precision_k == 100
+    assert result.random_state == 17
+    assert result.candidates == evaluations
+    assert result.best_candidate is evaluations[1]

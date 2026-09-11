@@ -71,6 +71,20 @@ class HyperparameterCandidateEvaluation:
     mean_card_precision_at_k: float
 
 
+@dataclass(frozen=True)
+class HyperparameterSearchResult:
+    """Complete result of a reproducible hyperparameter search."""
+
+    model_name: str
+    primary_metric: str
+    secondary_metric: str
+    n_iter: int
+    card_precision_k: int
+    random_state: int
+    candidates: tuple[HyperparameterCandidateEvaluation, ...]
+    best_candidate: HyperparameterCandidateEvaluation
+
+
 def build_prequential_folds(
     partition: pd.DataFrame,
     *,
@@ -264,6 +278,48 @@ def select_best_hyperparameter_candidate(
             candidate.mean_average_precision,
             candidate.mean_card_precision_at_k,
         ),
+    )
+
+
+def run_hyperparameter_search(
+    partition: pd.DataFrame,
+    folds: Sequence[PrequentialFold],
+    *,
+    model_name: str,
+    n_iter: int,
+    card_precision_k: int,
+    random_state: int = 42,
+) -> HyperparameterSearchResult:
+    """Sample, evaluate and select hyperparameters using temporal folds."""
+    parameter_candidates = sample_hyperparameter_candidates(
+        model_name,
+        n_iter=n_iter,
+        random_state=random_state,
+    )
+
+    evaluations = tuple(
+        evaluate_hyperparameter_candidate(
+            partition,
+            folds,
+            model_name=model_name,
+            parameters=parameters,
+            card_precision_k=card_precision_k,
+            random_state=random_state,
+        )
+        for parameters in parameter_candidates
+    )
+
+    best_candidate = select_best_hyperparameter_candidate(evaluations)
+
+    return HyperparameterSearchResult(
+        model_name=model_name,
+        primary_metric="average_precision",
+        secondary_metric="card_precision_at_k",
+        n_iter=len(evaluations),
+        card_precision_k=card_precision_k,
+        random_state=random_state,
+        candidates=evaluations,
+        best_candidate=best_candidate,
     )
 
 
