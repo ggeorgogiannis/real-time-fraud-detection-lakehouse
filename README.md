@@ -20,9 +20,11 @@ The batch pipeline can:
 
 Phase 2 is complete and was published as [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0). DuckDB exposes the Silver and Gold datasets through persistent SQL views, while dbt builds tested staging models, analytical marts and reporting-ready fraud summaries.
 
-Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, a dummy prior baseline, class-balanced logistic regression, an imbalance-aware XGBoost classifier and reproducible hyperparameter optimization. Hyperparameters are selected exclusively from prequential folds within the training period using Average Precision and Card Precision@100.
+Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, baseline fraud models, reproducible hyperparameter optimization and validation-only decision-threshold selection.
 
-The next milestone is decision-threshold optimization on the validation partition. The final test partition will remain untouched until both model configuration and threshold selection are complete.
+Under a hard capacity of 100 unique customer-card alerts per day, validation selected the tuned XGBoost model with a decision threshold of `0.615461`. It achieved 29.43% card-day recall and 30.17% card-day precision without exceeding the alert capacity on any validation day.
+
+The final test partition remains untouched. The next milestone is a one-time evaluation of the selected XGBoost operating policy, followed by completion of Phase 3.
 
 ## Why This Project
 
@@ -120,15 +122,16 @@ A dummy prior classifier provides the non-informative reference, while class-bal
 
 #### Hyperparameter Optimization
 
-Hyperparameter optimization improves the model's scoring and ranking behaviour by selecting settings such as regularization strength, class weighting, tree depth and learning rate. It is kept separate from decision-threshold optimization because they solve different problems: hyperparameters control how probability scores are learned, while the decision threshold converts those scores into operational fraud alerts.
+Hyperparameter optimization improves the models' scoring and ranking behaviour by selecting settings such as regularization strength, class weighting, tree depth and learning rate. It is kept separate from decision-threshold optimization because the two processes solve different problems: hyperparameters control how probability scores are learned, while the decision threshold converts those scores into operational fraud alerts.
 
 The optimization protocol follows the time-aware validation and model-selection principles described in the Fraud Detection Handbook:
 
 * Only `train.parquet` is used for hyperparameter selection. The validation and test partitions remain untouched.
 * Three expanding prequential folds preserve transaction order.
-* Each fold uses a 14-day assessment window and a seven-day gap that represents delayed fraud-label availability.
+* Each fold uses a 14-day assessment window and a seven-day gap representing delayed fraud-label availability.
 * Preprocessing is fitted independently on each fold's historical training window.
-* Logistic regression evaluates its complete small search space. XGBoost uses deterministic random search because exhaustive search becomes increasingly expensive as the number of hyperparameters grows.
+* Logistic regression evaluates its complete small search space.
+* XGBoost uses deterministic random search because exhaustive search becomes increasingly expensive as the number of hyperparameters grows.
 * Each configuration is selected by mean Average Precision, with mean daily Card Precision@100 used as an operational tie-breaker.
 * ROC AUC is recorded as a diagnostic metric but does not determine the winner.
 * The selected configuration is refitted on the complete training partition.
@@ -138,7 +141,28 @@ Average Precision is the primary metric because fraud represents less than one p
 
 This design is based on the handbook's discussions of [threshold-free metrics](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_4_PerformanceMetrics/ThresholdFree.html), [top-k metrics](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_4_PerformanceMetrics/TopKBased.html), [time-aware validation strategies](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_5_ModelValidationAndSelection/ValidationStrategies.html) and [model selection](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_5_ModelValidationAndSelection/ModelSelection.html).
 
-Decision-threshold optimization is the next, separate step. It will use only the validation partition to choose an operating point that respects a documented alert capacity. The test partition will remain untouched until the final evaluation.
+#### Decision-Threshold Optimization
+
+Decision thresholds are selected exclusively from `validation.parquet`. The test partition remains untouched until the operating policy has been finalized.
+
+The policy uses a hard operational constraint of no more than 100 unique customer-card alerts on any validation day. Multiple transactions from the same customer on the same day are combined into one card-day using the maximum fraud probability and fraud label.
+
+For each tuned model, the optimizer selects the lowest global threshold that respects the daily capacity on every validation day. This maximizes card-day fraud recall among feasible thresholds. The final model is selected using:
+
+1. Highest card-day recall.
+2. Highest card-day precision when recall is tied.
+3. Highest transaction-level Average Precision when both card-day metrics are tied.
+
+The validation results are:
+
+| Model | Threshold | Average Precision | Card-day precision | Card-day recall | Mean daily alerts | Maximum daily alerts |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Logistic regression | 0.776854 | 0.316658 | 0.313953 | 0.286260 | 69.35 | 100 |
+| XGBoost | 0.615461 | 0.321720 | 0.301739 | 0.294317 | 74.19 | 100 |
+
+XGBoost is selected because it achieves the highest card-day recall while satisfying the daily capacity constraint. It also records the stronger transaction-level Average Precision. Neither model exceeds the alert budget on any validation day.
+
+The selected model, threshold, validation metrics, operating constraint and model-selection rules are written to `threshold_policy.json`. The artifact records explicitly that final test evaluation has not yet been performed.
 
 ### Phase 4: Local Platform
 
@@ -191,7 +215,7 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Train and evaluate baseline fraud models.
 - [x] Add an imbalance-aware XGBoost fraud model.
 - [x] Add prequential hyperparameter optimization.
-- [ ] Optimize decision thresholds on validation data.
+- [x] Optimize decision thresholds on validation data.
 - [ ] Evaluate the selected operating policy on the test period.
 
 ## Running the Project
@@ -306,6 +330,26 @@ The command creates or replaces:
 The search results record every sampled configuration, fold-level metrics, aggregate metrics, the selected configuration, library versions and validation settings. The selected models are refitted on the complete training partition.
 
 This command does not read the validation or test partitions and does not select a classification threshold. Decision-threshold optimization is performed separately so that the validation period can be used to choose an operational alert policy without influencing hyperparameter selection.
+
+### Optimize Decision Thresholds
+
+After hyperparameter selection, optimize the operating thresholds using only the validation partition:
+
+```bash
+fraud-lakehouse optimize-thresholds \
+  --dataset-dir data/ml \
+  --model-dir data/models \
+  --output-dir data/models \
+  --daily-card-capacity 100
+```
+
+The command creates or replaces:
+
+* `data/models/threshold_policy.json`
+
+The optimizer scores the validation partition with both tuned models and selects the lowest threshold that limits every validation day to no more than 100 unique customer-card alerts. Models are compared by card-day recall, card-day precision and transaction-level Average Precision, in that order.
+
+The policy artifact records both models' validation metrics, their selected thresholds, the operating constraint and the final model-selection decision. It does not read or evaluate the test partition.
 
 ### Build the Analytical Database
 
