@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 
 from fraud_lakehouse import cli
+from fraud_lakehouse.final_evaluation import (
+    FinalEvaluationOutputs,
+)
 from fraud_lakehouse.ml_dataset import ModelDatasetOutputs
 from fraud_lakehouse.optimization import (
     HyperparameterOptimizationOutputs,
@@ -14,9 +17,6 @@ from fraud_lakehouse.threshold_optimization import (
     ThresholdOptimizationOutputs,
 )
 from fraud_lakehouse.training import BaselineTrainingOutputs
-from fraud_lakehouse.final_evaluation import (
-    FinalEvaluationOutputs,
-)
 
 
 def test_main_runs_pipeline_and_logs_summary(
