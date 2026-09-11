@@ -3,8 +3,30 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import ParameterSampler
 
 from fraud_lakehouse.ml_dataset import MODEL_TARGET_COLUMN
+
+_LOGISTIC_REGRESSION_PARAMETER_SPACE = {
+    "C": (0.001, 0.01, 0.1, 1.0, 10.0, 100.0),
+    "class_weight": (None, "balanced"),
+}
+
+_XGBOOST_PARAMETER_SPACE = {
+    "n_estimators": (100, 200, 300, 500),
+    "max_depth": (3, 4, 6, 8),
+    "learning_rate": (0.01, 0.03, 0.05, 0.1, 0.2),
+    "min_child_weight": (1, 3, 5, 10),
+    "subsample": (0.6, 0.8, 1.0),
+    "colsample_bytree": (0.6, 0.8, 1.0),
+    "reg_alpha": (0.0, 0.01, 0.1, 1.0),
+    "reg_lambda": (0.1, 1.0, 5.0, 10.0),
+}
+
+_HYPERPARAMETER_SPACES = {
+    "logistic_regression": _LOGISTIC_REGRESSION_PARAMETER_SPACE,
+    "xgboost": _XGBOOST_PARAMETER_SPACE,
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +104,29 @@ def build_prequential_folds(
         )
 
     return tuple(folds)
+
+
+def sample_hyperparameter_candidates(
+    model_name: str,
+    *,
+    n_iter: int,
+    random_state: int = 42,
+) -> tuple[dict[str, object], ...]:
+    """Sample deterministic hyperparameter candidates for a supported model."""
+    if model_name not in _HYPERPARAMETER_SPACES:
+        supported = ", ".join(sorted(_HYPERPARAMETER_SPACES))
+        raise ValueError(f"Unsupported model_name: {model_name}. Supported models: {supported}.")
+
+    if n_iter <= 0:
+        raise ValueError("n_iter must be greater than zero.")
+
+    sampled = ParameterSampler(
+        _HYPERPARAMETER_SPACES[model_name],
+        n_iter=n_iter,
+        random_state=random_state,
+    )
+
+    return tuple(dict(candidate) for candidate in sampled)
 
 
 def card_precision_at_k(

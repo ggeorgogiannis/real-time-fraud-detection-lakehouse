@@ -4,6 +4,7 @@ import pytest
 from fraud_lakehouse.tuning import (
     build_prequential_folds,
     card_precision_at_k,
+    sample_hyperparameter_candidates,
 )
 
 
@@ -165,3 +166,57 @@ def test_card_precision_at_k_rejects_invalid_inputs() -> None:
         match="fraud_probability must contain values between 0 and 1",
     ):
         card_precision_at_k(partition, [1.1], k=1)
+
+
+def test_sample_hyperparameter_candidates_is_deterministic() -> None:
+    first_sample = sample_hyperparameter_candidates(
+        "xgboost",
+        n_iter=4,
+        random_state=17,
+    )
+    second_sample = sample_hyperparameter_candidates(
+        "xgboost",
+        n_iter=4,
+        random_state=17,
+    )
+
+    assert first_sample == second_sample
+    assert len(first_sample) == 4
+    assert len({tuple(sorted(candidate.items())) for candidate in first_sample}) == 4
+
+    expected_parameters = {
+        "colsample_bytree",
+        "learning_rate",
+        "max_depth",
+        "min_child_weight",
+        "n_estimators",
+        "reg_alpha",
+        "reg_lambda",
+        "subsample",
+    }
+    assert all(set(candidate) == expected_parameters for candidate in first_sample)
+
+
+def test_sample_hyperparameter_candidates_supports_logistic_regression() -> None:
+    candidates = sample_hyperparameter_candidates(
+        "logistic_regression",
+        n_iter=3,
+        random_state=42,
+    )
+
+    assert len(candidates) == 3
+    assert all(set(candidate) == {"C", "class_weight"} for candidate in candidates)
+
+
+def test_sample_hyperparameter_candidates_rejects_invalid_requests() -> None:
+    with pytest.raises(ValueError, match="Unsupported model_name"):
+        sample_hyperparameter_candidates(
+            "random_forest",
+            n_iter=1,
+        )
+
+    with pytest.raises(ValueError, match="n_iter must be greater than zero"):
+        sample_hyperparameter_candidates(
+            "xgboost",
+            n_iter=0,
+        )
