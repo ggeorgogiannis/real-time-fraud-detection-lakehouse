@@ -6,6 +6,9 @@ from pathlib import Path
 
 from fraud_lakehouse.analytics import build_analytics_database
 from fraud_lakehouse.ml_dataset import materialize_model_dataset
+from fraud_lakehouse.optimization import (
+    optimize_and_publish_hyperparameters,
+)
 from fraud_lakehouse.pipeline import run_batch_pipeline
 from fraud_lakehouse.training import train_and_publish_baselines
 
@@ -98,6 +101,65 @@ def build_parser() -> argparse.ArgumentParser:
         "train-baselines",
         help="Train and evaluate baseline fraud classifiers.",
     )
+    tuning_parser = subparsers.add_parser(
+        "tune-hyperparameters",
+        help="Tune fraud classifiers using prequential temporal validation.",
+    )
+    tuning_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the training Parquet partition.",
+    )
+    tuning_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for tuned model artifacts and search results.",
+    )
+    tuning_parser.add_argument(
+        "--logistic-iterations",
+        type=int,
+        default=12,
+        help="Number of logistic-regression configurations to evaluate.",
+    )
+    tuning_parser.add_argument(
+        "--xgboost-iterations",
+        type=int,
+        default=20,
+        help="Number of XGBoost configurations to evaluate.",
+    )
+    tuning_parser.add_argument(
+        "--folds",
+        type=int,
+        default=3,
+        help="Number of prequential assessment folds.",
+    )
+    tuning_parser.add_argument(
+        "--assessment-days",
+        type=int,
+        default=14,
+        help="Number of days in each assessment fold.",
+    )
+    tuning_parser.add_argument(
+        "--gap-days",
+        type=int,
+        default=7,
+        help="Label-delay gap before each assessment fold.",
+    )
+    tuning_parser.add_argument(
+        "--card-precision-k",
+        type=int,
+        default=100,
+        help="Daily investigation capacity used for Card Precision at k.",
+    )
+    tuning_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed used for reproducible parameter sampling.",
+    )
+    _add_log_level_argument(tuning_parser)
     training_parser.add_argument(
         "--dataset-dir",
         type=Path,
@@ -219,6 +281,35 @@ def _train_baselines_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _tune_hyperparameters_command(
+    arguments: argparse.Namespace,
+) -> int:
+    outputs = optimize_and_publish_hyperparameters(
+        dataset_dir=arguments.dataset_dir,
+        output_dir=arguments.output_dir,
+        logistic_iterations=arguments.logistic_iterations,
+        xgboost_iterations=arguments.xgboost_iterations,
+        n_folds=arguments.folds,
+        assessment_days=arguments.assessment_days,
+        gap_days=arguments.gap_days,
+        card_precision_k=arguments.card_precision_k,
+        random_state=arguments.random_state,
+    )
+
+    LOGGER.info(
+        (
+            "hyperparameter_optimization_completed "
+            "logistic_model_path=%s xgboost_model_path=%s "
+            "results_path=%s"
+        ),
+        outputs.logistic_model_path,
+        outputs.xgboost_model_path,
+        outputs.results_path,
+    )
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -239,6 +330,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _build_ml_dataset_command(arguments)
         if arguments.command == "train-baselines":
             return _train_baselines_command(arguments)
+        if arguments.command == "tune-hyperparameters":
+            return _tune_hyperparameters_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",

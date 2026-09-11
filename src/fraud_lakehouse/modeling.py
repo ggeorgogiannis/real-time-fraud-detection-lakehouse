@@ -92,9 +92,9 @@ def prepare_model_partitions(
     test: pd.DataFrame,
 ) -> PreparedModelPartitions:
     """Fit preprocessing on training data and transform every partition."""
-    train_inputs = _extract_model_inputs(train)
-    validation_inputs = _extract_model_inputs(validation)
-    test_inputs = _extract_model_inputs(test)
+    train_inputs = extract_model_inputs(train)
+    validation_inputs = extract_model_inputs(validation)
+    test_inputs = extract_model_inputs(test)
 
     preprocessor = build_model_preprocessor()
 
@@ -175,11 +175,11 @@ def train_baseline_models(
             prepared.train.target,
         )
 
-        validation_probability = _fraud_probability(
+        validation_probability = fraud_probability(
             estimator,
             prepared.validation.features,
         )
-        test_probability = _fraud_probability(
+        test_probability = fraud_probability(
             estimator,
             prepared.test.features,
         )
@@ -275,7 +275,7 @@ def evaluate_binary_classifier(
     )
 
 
-def _extract_model_inputs(partition: pd.DataFrame) -> ModelInputs:
+def extract_model_inputs(partition: pd.DataFrame) -> ModelInputs:
     required_columns = (*MODEL_FEATURE_COLUMNS, MODEL_TARGET_COLUMN)
     missing_columns = sorted(set(required_columns).difference(partition.columns))
 
@@ -311,7 +311,7 @@ def _extract_model_inputs(partition: pd.DataFrame) -> ModelInputs:
     )
 
 
-def _fraud_probability(
+def fraud_probability(
     estimator: BaselineEstimator,
     features: pd.DataFrame,
 ) -> np.ndarray:

@@ -6,6 +6,9 @@ import pytest
 
 from fraud_lakehouse import cli
 from fraud_lakehouse.ml_dataset import ModelDatasetOutputs
+from fraud_lakehouse.optimization import (
+    HyperparameterOptimizationOutputs,
+)
 from fraud_lakehouse.pipeline import BatchPipelineResult
 from fraud_lakehouse.training import BaselineTrainingOutputs
 
@@ -199,3 +202,75 @@ def test_main_trains_baseline_models(
     assert exit_code == 0
     assert "baseline_models_trained" in caplog.text
     assert f"xgboost_model_path={output_dir / 'xgboost.joblib'}" in caplog.text
+
+
+def test_main_tunes_hyperparameters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dataset_dir = tmp_path / "dataset"
+    output_dir = tmp_path / "models"
+
+    def fake_optimize_and_publish_hyperparameters(
+        *,
+        dataset_dir: Path,
+        output_dir: Path,
+        logistic_iterations: int,
+        xgboost_iterations: int,
+        n_folds: int,
+        assessment_days: int,
+        gap_days: int,
+        card_precision_k: int,
+        random_state: int,
+    ) -> HyperparameterOptimizationOutputs:
+        assert dataset_dir == tmp_path / "dataset"
+        assert output_dir == tmp_path / "models"
+        assert logistic_iterations == 3
+        assert xgboost_iterations == 4
+        assert n_folds == 2
+        assert assessment_days == 5
+        assert gap_days == 7
+        assert card_precision_k == 100
+        assert random_state == 17
+
+        return HyperparameterOptimizationOutputs(
+            logistic_model_path=(output_dir / "tuned_logistic_regression.joblib"),
+            xgboost_model_path=output_dir / "tuned_xgboost.joblib",
+            results_path=output_dir / "hyperparameter_search.json",
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "optimize_and_publish_hyperparameters",
+        fake_optimize_and_publish_hyperparameters,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "tune-hyperparameters",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output-dir",
+            str(output_dir),
+            "--logistic-iterations",
+            "3",
+            "--xgboost-iterations",
+            "4",
+            "--folds",
+            "2",
+            "--assessment-days",
+            "5",
+            "--gap-days",
+            "7",
+            "--card-precision-k",
+            "100",
+            "--random-state",
+            "17",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "hyperparameter_optimization_completed" in caplog.text
+    assert f"results_path={output_dir / 'hyperparameter_search.json'}" in caplog.text

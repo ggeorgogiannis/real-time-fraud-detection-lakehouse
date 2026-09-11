@@ -223,6 +223,8 @@ __marimo__/
 /data/silver/
 /data/gold/
 /data/quarantine/
+/data/ml/
+/data/models/
 *.parquet
 *.pkl
 /models/
