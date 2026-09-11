@@ -14,6 +14,9 @@ from fraud_lakehouse.threshold_optimization import (
     ThresholdOptimizationOutputs,
 )
 from fraud_lakehouse.training import BaselineTrainingOutputs
+from fraud_lakehouse.final_evaluation import (
+    FinalEvaluationOutputs,
+)
 
 
 def test_main_runs_pipeline_and_logs_summary(
@@ -332,3 +335,59 @@ def test_main_optimizes_decision_thresholds(
     assert "selected_model=xgboost" in caplog.text
     assert "selected_threshold=0.91" in caplog.text
     assert f"policy_path={output_dir / 'threshold_policy.json'}" in caplog.text
+
+
+def test_main_evaluates_final_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dataset_dir = tmp_path / "dataset"
+    model_dir = tmp_path / "models"
+    policy_path = model_dir / "threshold_policy.json"
+    output_dir = tmp_path / "evaluation"
+
+    def fake_evaluate_and_publish_final_policy(
+        *,
+        dataset_dir: Path,
+        model_dir: Path,
+        policy_path: Path,
+        output_dir: Path,
+    ) -> FinalEvaluationOutputs:
+        assert dataset_dir == tmp_path / "dataset"
+        assert model_dir == tmp_path / "models"
+        assert policy_path == (tmp_path / "models" / "threshold_policy.json")
+        assert output_dir == tmp_path / "evaluation"
+
+        return FinalEvaluationOutputs(
+            results_path=output_dir / "final_evaluation.json",
+            model_name="xgboost",
+            threshold=0.615461,
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "evaluate_and_publish_final_policy",
+        fake_evaluate_and_publish_final_policy,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "evaluate-final-policy",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--model-dir",
+            str(model_dir),
+            "--policy-path",
+            str(policy_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "final_policy_evaluation_completed" in caplog.text
+    assert "model=xgboost" in caplog.text
+    assert "threshold=0.615461" in caplog.text
+    assert f"results_path={output_dir / 'final_evaluation.json'}" in caplog.text

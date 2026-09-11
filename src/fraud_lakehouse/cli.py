@@ -5,6 +5,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fraud_lakehouse.analytics import build_analytics_database
+from fraud_lakehouse.final_evaluation import (
+    evaluate_and_publish_final_policy,
+)
 from fraud_lakehouse.ml_dataset import materialize_model_dataset
 from fraud_lakehouse.optimization import (
     optimize_and_publish_hyperparameters,
@@ -218,6 +221,35 @@ def build_parser() -> argparse.ArgumentParser:
         "optimize-thresholds",
         help=("Select capacity-constrained decision thresholds using validation data."),
     )
+    final_evaluation_parser = subparsers.add_parser(
+        "evaluate-final-policy",
+        help="Evaluate the locked operating policy on the test period.",
+    )
+    final_evaluation_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the test Parquet partition.",
+    )
+    final_evaluation_parser.add_argument(
+        "--model-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the selected model artifact.",
+    )
+    final_evaluation_parser.add_argument(
+        "--policy-path",
+        type=Path,
+        required=True,
+        help="Path to the validation-selected threshold policy.",
+    )
+    final_evaluation_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for the final evaluation results.",
+    )
+    _add_log_level_argument(final_evaluation_parser)
     threshold_parser.add_argument(
         "--dataset-dir",
         type=Path,
@@ -369,6 +401,26 @@ def _optimize_thresholds_command(
     return 0
 
 
+def _evaluate_final_policy_command(
+    arguments: argparse.Namespace,
+) -> int:
+    outputs = evaluate_and_publish_final_policy(
+        dataset_dir=arguments.dataset_dir,
+        model_dir=arguments.model_dir,
+        policy_path=arguments.policy_path,
+        output_dir=arguments.output_dir,
+    )
+
+    LOGGER.info(
+        ("final_policy_evaluation_completed model=%s threshold=%s results_path=%s"),
+        outputs.model_name,
+        outputs.threshold,
+        outputs.results_path,
+    )
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -393,6 +445,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _tune_hyperparameters_command(arguments)
         if arguments.command == "optimize-thresholds":
             return _optimize_thresholds_command(arguments)
+        if arguments.command == "evaluate-final-policy":
+            return _evaluate_final_policy_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",

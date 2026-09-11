@@ -5,6 +5,7 @@ import pytest
 from fraud_lakehouse.thresholds import (
     CapacityConstrainedThreshold,
     ModelThresholdCandidate,
+    evaluate_card_day_threshold,
     select_capacity_constrained_threshold,
     select_model_threshold_policy,
 )
@@ -314,3 +315,67 @@ def test_select_model_policy_rejects_empty_candidates() -> None:
         match="candidates must contain at least one model",
     ):
         select_model_threshold_policy([])
+
+
+def test_evaluate_card_day_threshold_keeps_fixed_policy() -> None:
+    partition = pd.DataFrame(
+        {
+            "transaction_date": pd.to_datetime(
+                [
+                    "2026-01-01",
+                    "2026-01-01",
+                    "2026-01-01",
+                    "2026-01-02",
+                    "2026-01-02",
+                    "2026-01-02",
+                    "2026-01-03",
+                    "2026-01-03",
+                    "2026-01-03",
+                ]
+            ).date,
+            "customer_id": range(1, 10),
+            "tx_fraud": [
+                1,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                1,
+            ],
+        }
+    )
+
+    result = evaluate_card_day_threshold(
+        partition,
+        [
+            0.90,
+            0.80,
+            0.70,
+            0.95,
+            0.85,
+            0.75,
+            0.90,
+            0.80,
+            0.74,
+        ],
+        threshold=0.75,
+        daily_card_capacity=2,
+    )
+
+    assert result.threshold == pytest.approx(0.75)
+    assert result.card_alert_count == 7
+    assert result.mean_daily_card_alerts == pytest.approx(7 / 3)
+    assert result.max_daily_card_alerts == 3
+    assert result.budget_exceeded_days == 1
+
+    assert result.true_positive_card_days == 2
+    assert result.false_positive_card_days == 5
+    assert result.false_negative_card_days == 1
+    assert result.true_negative_card_days == 1
+
+    assert result.card_day_precision == pytest.approx(2 / 7)
+    assert result.card_day_recall == pytest.approx(2 / 3)
+    assert result.card_day_f1 == pytest.approx(0.4)
