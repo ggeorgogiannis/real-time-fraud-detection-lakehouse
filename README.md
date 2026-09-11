@@ -20,9 +20,9 @@ The batch pipeline can:
 
 Phase 2 is complete and was published as [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0). DuckDB exposes the Silver and Gold datasets through persistent SQL views, while dbt builds tested staging models, analytical marts and reporting-ready fraud summaries.
 
-Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, a dummy prior baseline, class-balanced logistic regression and an imbalance-aware XGBoost classifier. All three models are evaluated on validation and test periods using metrics designed for imbalanced classification and are published with their fitted preprocessing pipelines.
+Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, a dummy prior baseline, class-balanced logistic regression, an imbalance-aware XGBoost classifier and reproducible hyperparameter optimization. Hyperparameters are selected exclusively from prequential folds within the training period using Average Precision and Card Precision@100.
 
-The next milestone is running the three-model workflow on the complete dataset, comparing validation performance and selecting an appropriate fraud-classification threshold.
+The next milestone is decision-threshold optimization on the validation partition. The final test partition will remain untouched until both model configuration and threshold selection are complete.
 
 ## Why This Project
 
@@ -116,9 +116,29 @@ Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 Phase 3 is underway. The project includes a leakage-safe dataset contract, chronological training, validation and test partitions, training-only preprocessing, and reproducible model artifacts.
 
-A dummy prior classifier provides the non-informative reference, while class-balanced logistic regression provides an interpretable statistical baseline. An imbalance-aware XGBoost classifier adds nonlinear modeling and feature interactions using a class-weight ratio calculated exclusively from the training partition.
+A dummy prior classifier provides the non-informative reference, while class-balanced logistic regression provides an interpretable statistical baseline. An imbalance-aware XGBoost classifier adds nonlinear modelling and feature interactions using a class-weight ratio calculated exclusively from the applicable training window.
 
-Evaluation reports average precision as the primary metric together with ROC AUC, precision, recall, F1 and confusion-matrix counts. The next steps are to run the workflow on the complete chronological dataset, compare validation performance, select an operating threshold and investigate calibration and validation-based tuning.
+#### Hyperparameter Optimization
+
+Hyperparameter optimization improves the model's scoring and ranking behaviour by selecting settings such as regularization strength, class weighting, tree depth and learning rate. It is kept separate from decision-threshold optimization because they solve different problems: hyperparameters control how probability scores are learned, while the decision threshold converts those scores into operational fraud alerts.
+
+The optimization protocol follows the time-aware validation and model-selection principles described in the Fraud Detection Handbook:
+
+* Only `train.parquet` is used for hyperparameter selection. The validation and test partitions remain untouched.
+* Three expanding prequential folds preserve transaction order.
+* Each fold uses a 14-day assessment window and a seven-day gap that represents delayed fraud-label availability.
+* Preprocessing is fitted independently on each fold's historical training window.
+* Logistic regression evaluates its complete small search space. XGBoost uses deterministic random search because exhaustive search becomes increasingly expensive as the number of hyperparameters grows.
+* Each configuration is selected by mean Average Precision, with mean daily Card Precision@100 used as an operational tie-breaker.
+* ROC AUC is recorded as a diagnostic metric but does not determine the winner.
+* The selected configuration is refitted on the complete training partition.
+* No classification threshold is selected during this process.
+
+Average Precision is the primary metric because fraud represents less than one percent of the complete dataset. Accuracy would therefore be dominated by legitimate transactions, while Average Precision evaluates how effectively the model ranks the rare fraud class across the precision-recall curve. Card Precision@100 adds the handbook's operational perspective by measuring how many compromised cards appear within a fixed daily investigation capacity.
+
+This design is based on the handbook's discussions of [threshold-free metrics](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_4_PerformanceMetrics/ThresholdFree.html), [top-k metrics](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_4_PerformanceMetrics/TopKBased.html), [time-aware validation strategies](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_5_ModelValidationAndSelection/ValidationStrategies.html) and [model selection](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_5_ModelValidationAndSelection/ModelSelection.html).
+
+Decision-threshold optimization is the next, separate step. It will use only the validation partition to choose an operating point that respects a documented alert capacity. The test partition will remain untouched until the final evaluation.
 
 ### Phase 4: Local Platform
 
@@ -170,6 +190,9 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Create leakage-safe model datasets.
 - [x] Train and evaluate baseline fraud models.
 - [x] Add an imbalance-aware XGBoost fraud model.
+- [x] Add prequential hyperparameter optimization.
+- [ ] Optimize decision thresholds on validation data.
+- [ ] Evaluate the selected operating policy on the test period.
 
 ## Running the Project
 
@@ -256,6 +279,33 @@ The command creates or replaces:
 Each model artifact contains the fitted training preprocessor, estimator, feature contract and classification threshold. The metrics file contains separate validation and test results for all three models together with the installed scikit-learn and XGBoost versions.
 
 See [`docs/baseline_models.md`](docs/baseline_models.md) for the preprocessing strategy, model configurations, class-imbalance handling, evaluation metrics and current limitations.
+
+### Tune Model Hyperparameters
+
+After building the machine-learning dataset, optimize logistic regression and XGBoost using only the training partition:
+
+```bash
+fraud-lakehouse tune-hyperparameters \
+  --dataset-dir data/ml \
+  --output-dir data/models \
+  --logistic-iterations 12 \
+  --xgboost-iterations 20 \
+  --folds 3 \
+  --assessment-days 14 \
+  --gap-days 7 \
+  --card-precision-k 100 \
+  --random-state 42
+```
+
+The command creates or replaces:
+
+* `data/models/tuned_logistic_regression.joblib`
+* `data/models/tuned_xgboost.joblib`
+* `data/models/hyperparameter_search.json`
+
+The search results record every sampled configuration, fold-level metrics, aggregate metrics, the selected configuration, library versions and validation settings. The selected models are refitted on the complete training partition.
+
+This command does not read the validation or test partitions and does not select a classification threshold. Decision-threshold optimization is performed separately so that the validation period can be used to choose an operational alert policy without influencing hyperparameter selection.
 
 ### Build the Analytical Database
 
