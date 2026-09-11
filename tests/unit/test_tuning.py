@@ -2,11 +2,11 @@ import pandas as pd
 import pytest
 
 from fraud_lakehouse.tuning import (
+    HyperparameterCandidateEvaluation,
     build_prequential_folds,
     card_precision_at_k,
-    sample_hyperparameter_candidates,
     evaluate_hyperparameter_candidate,
-    HyperparameterCandidateEvaluation,
+    sample_hyperparameter_candidates,
     select_best_hyperparameter_candidate,
 )
 

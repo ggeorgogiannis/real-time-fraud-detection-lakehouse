@@ -3,19 +3,18 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ParameterSampler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.model_selection import ParameterSampler
 from xgboost import XGBClassifier
 
+from fraud_lakehouse.ml_dataset import MODEL_TARGET_COLUMN
 from fraud_lakehouse.modeling import (
     BaselineEstimator,
     build_model_preprocessor,
     extract_model_inputs,
     fraud_probability,
 )
-
-from fraud_lakehouse.ml_dataset import MODEL_TARGET_COLUMN
 
 _LOGISTIC_REGRESSION_PARAMETER_SPACE = {
     "C": (0.001, 0.01, 0.1, 1.0, 10.0, 100.0),
