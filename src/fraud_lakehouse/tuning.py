@@ -214,7 +214,7 @@ def evaluate_hyperparameter_candidate(
         )
         assessment_features = preprocessor.transform(assessment_inputs.features)
 
-        estimator = _build_tuning_estimator(
+        estimator = build_tuning_estimator(
             model_name=model_name,
             parameters=candidate_parameters,
             training_target=training_inputs.target,
@@ -323,7 +323,7 @@ def run_hyperparameter_search(
     )
 
 
-def _build_tuning_estimator(
+def build_tuning_estimator(
     *,
     model_name: str,
     parameters: Mapping[str, object],
