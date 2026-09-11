@@ -20,11 +20,13 @@ The batch pipeline can:
 
 Phase 2 is complete and was published as [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0). DuckDB exposes the Silver and Gold datasets through persistent SQL views, while dbt builds tested staging models, analytical marts and reporting-ready fraud summaries.
 
-Phase 3 is underway. The project now includes leakage-safe chronological model datasets, training-only preprocessing, baseline fraud models, reproducible hyperparameter optimization and validation-only decision-threshold selection.
+Phase 3 is complete and is published as [v0.3.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.3.0). It includes leakage-safe chronological datasets, training-only preprocessing, baseline fraud models, prequential hyperparameter optimization, validation-only threshold selection and locked test-period evaluation.
 
-Under a hard capacity of 100 unique customer-card alerts per day, validation selected the tuned XGBoost model with a decision threshold of `0.615461`. It achieved 29.43% card-day recall and 30.17% card-day precision without exceeding the alert capacity on any validation day.
+Validation selected the tuned XGBoost model with a decision threshold of `0.615461` under a hard capacity of 100 unique customer-card alerts per day. The model, preprocessing, threshold and operating constraint were fixed before the test partition was evaluated.
 
-The final test partition remains untouched. The next milestone is a one-time evaluation of the selected XGBoost operating policy, followed by completion of Phase 3.
+On the final test period, the policy achieved transaction-level Average Precision of `0.315441`, precision of `0.471338`, recall of `0.319592` and F1 of `0.380908`. At the card-day level, precision was `0.416230` and recall was `0.280547`. The policy generated an average of 50.93 alerts per day, reached a maximum of 74 and never exceeded its daily capacity.
+
+The next milestone is Phase 4: containerizing the local platform and orchestrating scheduled batch workflows.
 
 ## Why This Project
 
@@ -116,7 +118,7 @@ Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 ### Phase 3: Fraud Detection
 
-Phase 3 is underway. The project includes a leakage-safe dataset contract, chronological training, validation and test partitions, training-only preprocessing, and reproducible model artifacts.
+Phase 3 is complete. The project includes a leakage-safe dataset contract, chronological training, validation and test partitions, training-only preprocessing, and reproducible model artifacts.
 
 A dummy prior classifier provides the non-informative reference, while class-balanced logistic regression provides an interpretable statistical baseline. An imbalance-aware XGBoost classifier adds nonlinear modelling and feature interactions using a class-weight ratio calculated exclusively from the applicable training window.
 
@@ -162,7 +164,27 @@ The validation results are:
 
 XGBoost is selected because it achieves the highest card-day recall while satisfying the daily capacity constraint. It also records the stronger transaction-level Average Precision. Neither model exceeds the alert budget on any validation day.
 
-The selected model, threshold, validation metrics, operating constraint and model-selection rules are written to `threshold_policy.json`. The artifact records explicitly that final test evaluation has not yet been performed.
+The selected model, threshold, validation metrics, operating constraint and model-selection rules are written to `threshold_policy.json`.
+
+#### Final Test Evaluation
+
+After the operating policy was locked, the selected XGBoost model and threshold were evaluated once on `test.parquet`. No model, preprocessing, hyperparameter, threshold or capacity setting was changed after inspecting the test results.
+
+| Metric | Validation | Test |
+| --- | ---: | ---: |
+| Transaction Average Precision | 0.321720 | 0.315441 |
+| Transaction precision | 0.346426 | 0.471338 |
+| Transaction recall | 0.330461 | 0.319592 |
+| Transaction F1 | 0.338255 | 0.380908 |
+| Card-day precision | 0.301739 | 0.416230 |
+| Card-day recall | 0.294317 | 0.280547 |
+| Mean daily alerts | 74.19 | 50.93 |
+| Maximum daily alerts | 100 | 74 |
+| Capacity-exceeded days | 0 | 0 |
+
+The final transaction-level confusion matrix contains 284,413 true negatives, 913 false positives, 1,733 false negatives and 814 true positives. The complete locked-policy evaluation is written to `final_evaluation.json`.
+
+The test results are reported as the final unbiased estimate for this Phase 3 policy and are not used for further model or threshold selection.
 
 ### Phase 4: Local Platform
 
@@ -216,7 +238,7 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Add an imbalance-aware XGBoost fraud model.
 - [x] Add prequential hyperparameter optimization.
 - [x] Optimize decision thresholds on validation data.
-- [ ] Evaluate the selected operating policy on the test period.
+- [x] Evaluate the selected operating policy on the test period.
 
 ## Running the Project
 
@@ -350,6 +372,24 @@ The command creates or replaces:
 The optimizer scores the validation partition with both tuned models and selects the lowest threshold that limits every validation day to no more than 100 unique customer-card alerts. Models are compared by card-day recall, card-day precision and transaction-level Average Precision, in that order.
 
 The policy artifact records both models' validation metrics, their selected thresholds, the operating constraint and the final model-selection decision. It does not read or evaluate the test partition.
+
+### Evaluate the Final Policy
+
+After the model and threshold have been locked, evaluate the selected policy on the test partition:
+
+```bash
+fraud-lakehouse evaluate-final-policy \
+  --dataset-dir data/ml \
+  --model-dir data/models \
+  --policy-path data/models/threshold_policy.json \
+  --output-dir data/models
+```
+
+The command creates or replaces:
+
+* `data/models/final_evaluation.json`
+
+This command evaluates only the model and threshold recorded in the validation-selected policy. The test results do not influence model selection or threshold optimization.
 
 ### Build the Analytical Database
 
