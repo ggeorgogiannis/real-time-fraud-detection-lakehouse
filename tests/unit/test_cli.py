@@ -10,6 +10,9 @@ from fraud_lakehouse.optimization import (
     HyperparameterOptimizationOutputs,
 )
 from fraud_lakehouse.pipeline import BatchPipelineResult
+from fraud_lakehouse.threshold_optimization import (
+    ThresholdOptimizationOutputs,
+)
 from fraud_lakehouse.training import BaselineTrainingOutputs
 
 
@@ -274,3 +277,58 @@ def test_main_tunes_hyperparameters(
     assert exit_code == 0
     assert "hyperparameter_optimization_completed" in caplog.text
     assert f"results_path={output_dir / 'hyperparameter_search.json'}" in caplog.text
+
+
+def test_main_optimizes_decision_thresholds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dataset_dir = tmp_path / "dataset"
+    model_dir = tmp_path / "models"
+    output_dir = tmp_path / "policy"
+
+    def fake_optimize_and_publish_thresholds(
+        *,
+        dataset_dir: Path,
+        model_dir: Path,
+        output_dir: Path,
+        daily_card_capacity: int,
+    ) -> ThresholdOptimizationOutputs:
+        assert dataset_dir == tmp_path / "dataset"
+        assert model_dir == tmp_path / "models"
+        assert output_dir == tmp_path / "policy"
+        assert daily_card_capacity == 75
+
+        return ThresholdOptimizationOutputs(
+            policy_path=output_dir / "threshold_policy.json",
+            selected_model_name="xgboost",
+            selected_threshold=0.91,
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "optimize_and_publish_thresholds",
+        fake_optimize_and_publish_thresholds,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "optimize-thresholds",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--model-dir",
+            str(model_dir),
+            "--output-dir",
+            str(output_dir),
+            "--daily-card-capacity",
+            "75",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "threshold_optimization_completed" in caplog.text
+    assert "selected_model=xgboost" in caplog.text
+    assert "selected_threshold=0.91" in caplog.text
+    assert f"policy_path={output_dir / 'threshold_policy.json'}" in caplog.text

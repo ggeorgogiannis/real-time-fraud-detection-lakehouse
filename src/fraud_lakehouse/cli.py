@@ -10,6 +10,9 @@ from fraud_lakehouse.optimization import (
     optimize_and_publish_hyperparameters,
 )
 from fraud_lakehouse.pipeline import run_batch_pipeline
+from fraud_lakehouse.threshold_optimization import (
+    optimize_and_publish_thresholds,
+)
 from fraud_lakehouse.training import train_and_publish_baselines
 
 LOGGER = logging.getLogger(__name__)
@@ -45,7 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run the local fraud-detection lakehouse pipeline.",
     )
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
 
     run_parser = subparsers.add_parser(
         "run",
@@ -72,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     analytics_parser = subparsers.add_parser(
         "build-analytics",
-        help="Create a DuckDB database over Silver and Gold Parquet files.",
+        help=("Create a DuckDB database over Silver and Gold Parquet files."),
     )
     analytics_parser.add_argument(
         "--silver-dir",
@@ -93,92 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path of the DuckDB database to create.",
     )
     _add_log_level_argument(analytics_parser)
+
     ml_dataset_parser = subparsers.add_parser(
         "build-ml-dataset",
-        help="Create chronological training, validation and test datasets.",
+        help=("Create chronological training, validation and test datasets."),
     )
-    training_parser = subparsers.add_parser(
-        "train-baselines",
-        help="Train and evaluate baseline fraud classifiers.",
-    )
-    tuning_parser = subparsers.add_parser(
-        "tune-hyperparameters",
-        help="Tune fraud classifiers using prequential temporal validation.",
-    )
-    tuning_parser.add_argument(
-        "--dataset-dir",
-        type=Path,
-        required=True,
-        help="Directory containing the training Parquet partition.",
-    )
-    tuning_parser.add_argument(
-        "--output-dir",
-        type=Path,
-        required=True,
-        help="Directory for tuned model artifacts and search results.",
-    )
-    tuning_parser.add_argument(
-        "--logistic-iterations",
-        type=int,
-        default=12,
-        help="Number of logistic-regression configurations to evaluate.",
-    )
-    tuning_parser.add_argument(
-        "--xgboost-iterations",
-        type=int,
-        default=20,
-        help="Number of XGBoost configurations to evaluate.",
-    )
-    tuning_parser.add_argument(
-        "--folds",
-        type=int,
-        default=3,
-        help="Number of prequential assessment folds.",
-    )
-    tuning_parser.add_argument(
-        "--assessment-days",
-        type=int,
-        default=14,
-        help="Number of days in each assessment fold.",
-    )
-    tuning_parser.add_argument(
-        "--gap-days",
-        type=int,
-        default=7,
-        help="Label-delay gap before each assessment fold.",
-    )
-    tuning_parser.add_argument(
-        "--card-precision-k",
-        type=int,
-        default=100,
-        help="Daily investigation capacity used for Card Precision at k.",
-    )
-    tuning_parser.add_argument(
-        "--random-state",
-        type=int,
-        default=42,
-        help="Random seed used for reproducible parameter sampling.",
-    )
-    _add_log_level_argument(tuning_parser)
-    training_parser.add_argument(
-        "--dataset-dir",
-        type=Path,
-        required=True,
-        help="Directory containing train, validation and test Parquet files.",
-    )
-    training_parser.add_argument(
-        "--output-dir",
-        type=Path,
-        required=True,
-        help="Directory for trained model artifacts and metrics.",
-    )
-    training_parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.5,
-        help="Probability threshold used for binary classification metrics.",
-    )
-    _add_log_level_argument(training_parser)
     ml_dataset_parser.add_argument(
         "--transaction-features-path",
         type=Path,
@@ -204,6 +129,120 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exclusive UTC boundary for the validation partition.",
     )
     _add_log_level_argument(ml_dataset_parser)
+
+    training_parser = subparsers.add_parser(
+        "train-baselines",
+        help="Train and evaluate baseline fraud classifiers.",
+    )
+    training_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help=("Directory containing train, validation and test Parquet files."),
+    )
+    training_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for trained model artifacts and metrics.",
+    )
+    training_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help=("Probability threshold used for binary classification metrics."),
+    )
+    _add_log_level_argument(training_parser)
+
+    tuning_parser = subparsers.add_parser(
+        "tune-hyperparameters",
+        help=("Tune fraud classifiers using prequential temporal validation."),
+    )
+    tuning_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the training Parquet partition.",
+    )
+    tuning_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help=("Directory for tuned model artifacts and search results."),
+    )
+    tuning_parser.add_argument(
+        "--logistic-iterations",
+        type=int,
+        default=12,
+        help=("Number of logistic-regression configurations to evaluate."),
+    )
+    tuning_parser.add_argument(
+        "--xgboost-iterations",
+        type=int,
+        default=20,
+        help=("Number of XGBoost configurations to evaluate."),
+    )
+    tuning_parser.add_argument(
+        "--folds",
+        type=int,
+        default=3,
+        help="Number of prequential assessment folds.",
+    )
+    tuning_parser.add_argument(
+        "--assessment-days",
+        type=int,
+        default=14,
+        help="Number of days in each assessment fold.",
+    )
+    tuning_parser.add_argument(
+        "--gap-days",
+        type=int,
+        default=7,
+        help="Label-delay gap before each assessment fold.",
+    )
+    tuning_parser.add_argument(
+        "--card-precision-k",
+        type=int,
+        default=100,
+        help=("Daily investigation capacity used for Card Precision at k."),
+    )
+    tuning_parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help=("Random seed used for reproducible parameter sampling."),
+    )
+    _add_log_level_argument(tuning_parser)
+
+    threshold_parser = subparsers.add_parser(
+        "optimize-thresholds",
+        help=("Select capacity-constrained decision thresholds using validation data."),
+    )
+    threshold_parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        required=True,
+        help=("Directory containing the validation Parquet partition."),
+    )
+    threshold_parser.add_argument(
+        "--model-dir",
+        type=Path,
+        required=True,
+        help="Directory containing tuned model artifacts.",
+    )
+    threshold_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for the selected threshold policy.",
+    )
+    threshold_parser.add_argument(
+        "--daily-card-capacity",
+        type=int,
+        default=100,
+        help=("Maximum number of unique-card alerts allowed per day."),
+    )
+    _add_log_level_argument(threshold_parser)
 
     return parser
 
@@ -310,6 +349,26 @@ def _tune_hyperparameters_command(
     return 0
 
 
+def _optimize_thresholds_command(
+    arguments: argparse.Namespace,
+) -> int:
+    outputs = optimize_and_publish_thresholds(
+        dataset_dir=arguments.dataset_dir,
+        model_dir=arguments.model_dir,
+        output_dir=arguments.output_dir,
+        daily_card_capacity=arguments.daily_card_capacity,
+    )
+
+    LOGGER.info(
+        ("threshold_optimization_completed selected_model=%s selected_threshold=%s policy_path=%s"),
+        outputs.selected_model_name,
+        outputs.selected_threshold,
+        outputs.policy_path,
+    )
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -332,6 +391,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _train_baselines_command(arguments)
         if arguments.command == "tune-hyperparameters":
             return _tune_hyperparameters_command(arguments)
+        if arguments.command == "optimize-thresholds":
+            return _optimize_thresholds_command(arguments)
     except (FileNotFoundError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",
