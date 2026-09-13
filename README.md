@@ -26,7 +26,7 @@ Validation selected the tuned XGBoost model with a decision threshold of `0.6154
 
 On the final test period, the policy achieved transaction-level Average Precision of `0.315441`, precision of `0.471338`, recall of `0.319592` and F1 of `0.380908`. At the card-day level, precision was `0.416230` and recall was `0.280547`. The policy generated an average of 50.93 alerts per day, reached a maximum of 74 and never exceeded its daily capacity.
 
-The next milestone is Phase 4: containerizing the local platform and orchestrating scheduled batch workflows.
+Phase 4 is underway. The application is now packaged as a non-root Docker image and can run through Docker Compose with local data persistence. The next milestone is scheduling and monitoring the batch workflow with Apache Airflow.
 
 ## Why This Project
 
@@ -42,6 +42,8 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 
 `Gold transaction features -> Chronological ML datasets -> Fraud models`
 
+`Docker Compose -> Containerized fraud-lakehouse CLI -> Local lakehouse data`
+
 | Component   | Responsibility                                                          |
 | ----------- | ----------------------------------------------------------------------- |
 | Bronze      | Store ingested transactions with minimal changes and ingestion metadata |
@@ -51,6 +53,8 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 | DuckDB      | Expose Silver and Gold Parquet datasets through persistent SQL views    |
 | dbt         | Manage tested SQL transformations, staging models and analytical marts  |
 | ML datasets | Create validated chronological training, validation and test partitions |
+| Docker      | Package the application and dependencies into a reproducible runtime    |
+| Compose     | Mount local data and provide repeatable container execution commands    |
 
 The completed batch pipeline provides the common foundation for the analytical and machine-learning workflows. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
 
@@ -188,8 +192,7 @@ The test results are reported as the final unbiased estimate for this Phase 3 po
 
 ### Phase 4: Local Platform
 
-Containerize the services and orchestrate scheduled batch runs with Apache Airflow.
-
+Phase 4 is underway. The application runs as a non-root Docker container through Docker Compose, with local data persisted through bind mounts and raw inputs protected as read-only. The next step is to orchestrate scheduled batch workflows with Apache Airflow.
 ### Phase 5: Streaming Pipeline
 
 Simulate live transactions through Kafka and process them with Spark Structured Streaming.
@@ -239,6 +242,12 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Add prequential hyperparameter optimization.
 - [x] Optimize decision thresholds on validation data.
 - [x] Evaluate the selected operating policy on the test period.
+- [x] Package the application as a non-root Docker image.
+- [x] Add reproducible Docker Compose execution.
+- [x] Add automated container build and runtime checks.
+- [ ] Add the local Apache Airflow services.
+- [ ] Orchestrate the batch pipeline with an Airflow DAG.
+- [ ] Add Airflow validation, tests and operating documentation.
 
 ## Running the Project
 
@@ -280,6 +289,21 @@ fraud-lakehouse run \
   --output-dir data \
   --ingested-at-utc "2026-09-08T12:00:00Z"
 ```
+### Run with Docker
+
+Docker Desktop with WSL 2 integration is recommended on Windows. Build the application image:
+
+```bash
+docker compose build batch
+```
+
+Place trusted daily transaction files in `data/raw`, then run the containerized Bronze, Silver and Gold pipeline:
+
+```bash
+docker compose run --rm batch
+```
+
+The container runs as a non-root user, mounts `data/raw` as read-only and persists generated outputs under the local `data/` directory. See [`docs/containerization.md`](docs/containerization.md) for the image design, UID and GID configuration, volume behavior and additional commands.
 
 ### Build the Machine-Learning Dataset
 

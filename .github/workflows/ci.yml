@@ -40,3 +40,24 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+
+  container:
+    name: Container checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        run: docker compose config > /dev/null
+
+      - name: Build application image
+        run: docker build --tag fraud-lakehouse:ci .
+
+      - name: Verify container CLI
+        run: docker run --rm fraud-lakehouse:ci --help
+
+      - name: Verify non-root execution
+        run: test "$(docker run --rm --entrypoint id fraud-lakehouse:ci -u)" != "0"
