@@ -26,7 +26,7 @@ Validation selected the tuned XGBoost model with a decision threshold of `0.6154
 
 On the final test period, the policy achieved transaction-level Average Precision of `0.315441`, precision of `0.471338`, recall of `0.319592` and F1 of `0.380908`. At the card-day level, precision was `0.416230` and recall was `0.280547`. The policy generated an average of 50.93 alerts per day, reached a maximum of 74 and never exceeded its daily capacity.
 
-Phase 4 is underway. The application is now packaged as a non-root Docker image and can run through Docker Compose with local data persistence. The next milestone is scheduling and monitoring the batch workflow with Apache Airflow.
+Phase 4 is underway. The application runs as a non-root Docker image through Docker Compose, and Apache Airflow 3.3.1 now schedules and monitors the daily batch and analytics workflow. PostgreSQL stores orchestration metadata, while LocalExecutor runs tasks on the local development machine. The remaining milestone is automated Airflow validation in continuous integration.
 
 ## Why This Project
 
@@ -44,6 +44,8 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 
 `Docker Compose -> Containerized fraud-lakehouse CLI -> Local lakehouse data`
 
+`Airflow -> Scheduled batch pipeline -> DuckDB analytical database`
+
 | Component   | Responsibility                                                          |
 | ----------- | ----------------------------------------------------------------------- |
 | Bronze      | Store ingested transactions with minimal changes and ingestion metadata |
@@ -55,6 +57,8 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 | ML datasets | Create validated chronological training, validation and test partitions |
 | Docker      | Package the application and dependencies into a reproducible runtime    |
 | Compose     | Mount local data and provide repeatable container execution commands    |
+| Airflow     | Schedule and monitor the daily batch and analytics workflow             |
+| PostgreSQL  | Store Airflow metadata, task states and DAG-run history                 |
 
 The completed batch pipeline provides the common foundation for the analytical and machine-learning workflows. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
 
@@ -192,7 +196,8 @@ The test results are reported as the final unbiased estimate for this Phase 3 po
 
 ### Phase 4: Local Platform
 
-Phase 4 is underway. The application runs as a non-root Docker container through Docker Compose, with local data persisted through bind mounts and raw inputs protected as read-only. The next step is to orchestrate scheduled batch workflows with Apache Airflow.
+Phase 4 is underway. The application runs as a non-root Docker container through Docker Compose, with local data persisted through bind mounts and raw inputs protected as read-only. Apache Airflow 3.3.1 now orchestrates the daily batch pipeline and DuckDB analytical database build using PostgreSQL and LocalExecutor. The remaining work is to add Airflow-specific validation to continuous integration.
+
 ### Phase 5: Streaming Pipeline
 
 Simulate live transactions through Kafka and process them with Spark Structured Streaming.
@@ -245,9 +250,10 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Package the application as a non-root Docker image.
 - [x] Add reproducible Docker Compose execution.
 - [x] Add automated container build and runtime checks.
-- [ ] Add the local Apache Airflow services.
-- [ ] Orchestrate the batch pipeline with an Airflow DAG.
-- [ ] Add Airflow validation, tests and operating documentation.
+- [x] Add the local Apache Airflow services.
+- [x] Orchestrate the batch pipeline with an Airflow DAG.
+- [x] Add Airflow operating documentation.
+- [ ] Add automated Airflow DAG validation.
 
 ## Running the Project
 
@@ -304,6 +310,45 @@ docker compose run --rm batch
 ```
 
 The container runs as a non-root user, mounts `data/raw` as read-only and persists generated outputs under the local `data/` directory. See [`docs/containerization.md`](docs/containerization.md) for the image design, UID and GID configuration, volume behavior and additional commands.
+
+### Run with Airflow
+
+Create the local Airflow environment file:
+
+```bash
+cp .env.example .env
+```
+
+Set `AIRFLOW_UID` to the output of `id -u`, then replace the administrator password and JWT-secret placeholders in `.env`.
+
+Build and initialize the Airflow environment:
+
+```bash
+docker compose \
+  --file compose.airflow.yaml \
+  build
+
+docker compose \
+  --file compose.airflow.yaml \
+  up airflow-init
+```
+
+Start the Airflow services:
+
+```bash
+docker compose \
+  --file compose.airflow.yaml \
+  up --detach \
+  airflow-api-server \
+  airflow-scheduler \
+  airflow-dag-processor
+```
+
+The Airflow interface is available at `http://localhost:8080`.
+
+The `fraud_lakehouse_daily` DAG runs daily at `02:00 UTC`. It executes the batch pipeline before rebuilding the DuckDB analytical database.
+
+See [`docs/airflow-orchestration.md`](docs/airflow-orchestration.md) for environment configuration, DAG behavior, manual execution, validation, monitoring and shutdown commands.
 
 ### Build the Machine-Learning Dataset
 
