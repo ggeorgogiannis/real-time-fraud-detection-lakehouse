@@ -26,7 +26,7 @@ Validation selected the tuned XGBoost model with a decision threshold of `0.6154
 
 On the final test period, the policy achieved transaction-level Average Precision of `0.315441`, precision of `0.471338`, recall of `0.319592` and F1 of `0.380908`. At the card-day level, precision was `0.416230` and recall was `0.280547`. The policy generated an average of 50.93 alerts per day, reached a maximum of 74 and never exceeded its daily capacity.
 
-Phase 4 is underway. The application runs as a non-root Docker image through Docker Compose, and Apache Airflow 3.3.1 now schedules and monitors the daily batch and analytics workflow. PostgreSQL stores orchestration metadata, while LocalExecutor runs tasks on the local development machine. The remaining milestone is automated Airflow validation in continuous integration.
+Phase 4 is complete. The application runs as a non-root Docker image through Docker Compose, and Apache Airflow 3.3.1 schedules and monitors the daily batch and analytics workflow. PostgreSQL stores orchestration metadata, while LocalExecutor runs tasks on the local development machine. Continuous integration validates the Airflow Compose configuration, runtime image, packaged CLI, non-root execution and DAG structure.
 
 ## Why This Project
 
@@ -196,7 +196,7 @@ The test results are reported as the final unbiased estimate for this Phase 3 po
 
 ### Phase 4: Local Platform
 
-Phase 4 is underway. The application runs as a non-root Docker container through Docker Compose, with local data persisted through bind mounts and raw inputs protected as read-only. Apache Airflow 3.3.1 now orchestrates the daily batch pipeline and DuckDB analytical database build using PostgreSQL and LocalExecutor. The remaining work is to add Airflow-specific validation to continuous integration.
+Phase 4 is complete. The application runs as a non-root Docker container through Docker Compose, with local data persisted through bind mounts and raw inputs protected as read-only. Apache Airflow 3.3.1 orchestrates the daily batch pipeline and DuckDB analytical database build using PostgreSQL and LocalExecutor. Continuous integration validates the Airflow image, configuration and DAG structure.
 
 ### Phase 5: Streaming Pipeline
 
@@ -253,7 +253,7 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Add the local Apache Airflow services.
 - [x] Orchestrate the batch pipeline with an Airflow DAG.
 - [x] Add Airflow operating documentation.
-- [ ] Add automated Airflow DAG validation.
+- [x] Add automated Airflow DAG validation.
 
 ## Running the Project
 
