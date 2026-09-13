@@ -1,0 +1,25 @@
+name: fraud-lakehouse
+
+services:
+  batch:
+    image: fraud-lakehouse:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_UID: "${APP_UID:-1000}"
+        APP_GID: "${APP_GID:-1000}"
+    volumes:
+      - type: bind
+        source: ./data
+        target: /app/data
+      - type: bind
+        source: ./data/raw
+        target: /app/data/raw
+        read_only: true
+    command:
+      - run
+      - --raw-dir
+      - /app/data/raw
+      - --output-dir
+      - /app/data
