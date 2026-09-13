@@ -1,0 +1,33 @@
+FROM apache/airflow:3.3.1-python3.11
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+USER root
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+WORKDIR /opt/airflow/app
+
+COPY --chown=airflow:root pyproject.toml ./
+
+RUN python -c 'import tomllib; project = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(project["project"]["dependencies"]))' \
+        > /tmp/runtime-requirements.txt \
+    && python -m pip install \
+        "apache-airflow==${AIRFLOW_VERSION}" \
+        "setuptools>=75" \
+        --requirement /tmp/runtime-requirements.txt \
+    && rm /tmp/runtime-requirements.txt
+
+COPY --chown=airflow:root README.md LICENSE ./
+COPY --chown=airflow:root src ./src
+
+RUN python -m pip install --no-deps --no-build-isolation .
+
+WORKDIR /opt/airflow
