@@ -26,7 +26,7 @@ set -euo pipefail
 fraud-lakehouse run \
     --raw-dir /opt/airflow/data/raw \
     --output-dir /opt/airflow/data \
-    --ingested-at-utc "{{ data_interval_end.isoformat() }}" \
+    --ingested-at-utc "{{ (data_interval_end | default(dag_run.run_after, true)).isoformat() }}" \
     --log-level INFO
 """,
         execution_timeout=timedelta(hours=2),
