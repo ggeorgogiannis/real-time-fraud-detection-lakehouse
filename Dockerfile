@@ -21,10 +21,19 @@ RUN groupadd --gid "${APP_GID}" fraud \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml ./
+
+RUN python -c 'import tomllib; project = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(project["project"]["dependencies"]))' \
+        > /tmp/runtime-requirements.txt \
+    && python -m pip install \
+        "setuptools>=75" \
+        --requirement /tmp/runtime-requirements.txt \
+    && rm /tmp/runtime-requirements.txt
+
+COPY README.md LICENSE ./
 COPY src ./src
 
-RUN python -m pip install . \
+RUN python -m pip install --no-deps --no-build-isolation . \
     && mkdir -p /app/data \
     && chown -R fraud:fraud /app/data
 
