@@ -234,3 +234,6 @@ dbt/logs/
 dbt/dbt_packages/
 data/analytics/
 dbt/.user.yml
+
+# Airflow local runtime
+/airflow/logs/

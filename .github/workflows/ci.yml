@@ -61,3 +61,60 @@ jobs:
 
       - name: Verify non-root execution
         run: test "$(docker run --rm --entrypoint id fraud-lakehouse:ci -u)" != "0"
+
+  airflow:
+    name: Airflow checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Airflow Compose configuration
+        run: |
+          docker compose \
+            --env-file .env.example \
+            --file compose.airflow.yaml \
+            config > /dev/null
+
+      - name: Build Airflow image
+        run: |
+          docker build \
+            --file Dockerfile.airflow \
+            --tag fraud-lakehouse-airflow:ci \
+            .
+
+      - name: Verify Airflow runtime
+        run: docker run --rm fraud-lakehouse-airflow:ci airflow version
+
+      - name: Verify packaged project CLI
+        run: docker run --rm --entrypoint fraud-lakehouse fraud-lakehouse-airflow:ci --help
+
+      - name: Verify non-root execution
+        run: test "$(docker run --rm --entrypoint id fraud-lakehouse-airflow:ci -u)" != "0"
+
+      - name: Validate DAG definition
+        run: |
+          docker run --rm --interactive \
+            --volume "${PWD}/airflow/dags:/opt/airflow/dags:ro" \
+            --entrypoint python \
+            fraud-lakehouse-airflow:ci - <<'PY'
+          import runpy
+
+          namespace = runpy.run_path(
+              "/opt/airflow/dags/fraud_lakehouse_daily.py"
+          )
+          dag = namespace["dag"]
+
+          assert dag.dag_id == "fraud_lakehouse_daily"
+          assert set(dag.task_ids) == {
+              "run_batch_pipeline",
+              "build_analytics_database",
+          }
+          assert dag.get_task(
+              "run_batch_pipeline"
+          ).downstream_task_ids == {
+              "build_analytics_database"
+          }
+          PY

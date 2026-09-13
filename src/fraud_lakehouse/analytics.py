@@ -23,7 +23,7 @@ def _quote_sql_string(value: str) -> str:
 
 
 def _parquet_file_list(paths: Sequence[Path]) -> str:
-    quoted_paths = ", ".join(_quote_sql_string(path.resolve().as_posix()) for path in paths)
+    quoted_paths = ", ".join(_quote_sql_string(path.as_posix()) for path in paths)
     return f"[{quoted_paths}]"
 
 

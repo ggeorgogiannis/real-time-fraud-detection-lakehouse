@@ -3,7 +3,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from fraud_lakehouse.analytics import build_analytics_database
+from fraud_lakehouse.analytics import (
+    _parquet_file_list,
+    build_analytics_database,
+)
 
 
 def test_build_analytics_database_requires_silver_files(
@@ -41,3 +44,9 @@ def test_build_analytics_database_requires_all_gold_files(
             gold_dir,
             tmp_path / "analytics.duckdb",
         )
+
+
+def test_parquet_file_list_preserves_relative_paths() -> None:
+    parquet_files = [Path("data/silver/2018-04-01.parquet")]
+
+    assert _parquet_file_list(parquet_files) == ("['data/silver/2018-04-01.parquet']")
