@@ -20,6 +20,7 @@ keywords = [
 ]
 
 dependencies = [
+    "confluent-kafka>=2.15,<3.0",
     "duckdb>=1.5,<2.0",
     "joblib>=1.4,<2.0",
     "pandas>=2.2",
