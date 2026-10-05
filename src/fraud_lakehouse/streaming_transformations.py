@@ -1,8 +1,12 @@
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 from fraud_lakehouse.bronze import SOURCE_COLUMNS
+
+INTEGER_PATTERN = r"^[+-]?[0-9]+$"
+
+RAW_TRANSACTION_COLUMNS = {column: f"raw_{column.lower()}" for column in SOURCE_COLUMNS}
 
 
 def transaction_event_schema() -> T.StructType:
@@ -103,4 +107,97 @@ def project_transaction_events(
         F.col("event.source_file_date").alias("source_file_date"),
         F.col("event.source_row_number").alias("source_row_number"),
         *transaction_columns,
+    )
+
+
+def _try_parse_integer(
+    column: str,
+    data_type: str,
+) -> Column:
+    value = F.trim(F.col(column))
+
+    return F.when(
+        value.rlike(INTEGER_PATTERN),
+        value.try_cast(data_type),
+    )
+
+
+def type_transaction_events(
+    projected_events: DataFrame,
+) -> DataFrame:
+    """Preserve raw values and create canonical typed fields."""
+    typed_events = projected_events
+
+    for source_column, raw_column in RAW_TRANSACTION_COLUMNS.items():
+        typed_events = typed_events.withColumnRenamed(
+            source_column,
+            raw_column,
+        )
+
+    return (
+        typed_events.withColumn(
+            "produced_at",
+            F.try_to_timestamp("produced_at_utc"),
+        )
+        .withColumn(
+            "source_date",
+            F.col("source_file_date").try_cast("date"),
+        )
+        .withColumn(
+            "transaction_id",
+            _try_parse_integer(
+                "raw_transaction_id",
+                "long",
+            ),
+        )
+        .withColumn(
+            "tx_datetime",
+            F.try_to_timestamp("raw_tx_datetime"),
+        )
+        .withColumn(
+            "customer_id",
+            _try_parse_integer(
+                "raw_customer_id",
+                "long",
+            ),
+        )
+        .withColumn(
+            "terminal_id",
+            _try_parse_integer(
+                "raw_terminal_id",
+                "long",
+            ),
+        )
+        .withColumn(
+            "tx_amount",
+            F.col("raw_tx_amount").try_cast("double"),
+        )
+        .withColumn(
+            "tx_time_seconds",
+            _try_parse_integer(
+                "raw_tx_time_seconds",
+                "long",
+            ),
+        )
+        .withColumn(
+            "tx_time_days",
+            _try_parse_integer(
+                "raw_tx_time_days",
+                "long",
+            ),
+        )
+        .withColumn(
+            "tx_fraud",
+            _try_parse_integer(
+                "raw_tx_fraud",
+                "byte",
+            ),
+        )
+        .withColumn(
+            "tx_fraud_scenario",
+            _try_parse_integer(
+                "raw_tx_fraud_scenario",
+                "byte",
+            ),
+        )
     )

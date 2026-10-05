@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime
 
 import pandas as pd
@@ -9,6 +10,7 @@ from fraud_lakehouse.streaming_transformations import (
     parse_kafka_transaction_events,
     project_transaction_events,
     transaction_event_schema,
+    type_transaction_events,
 )
 
 
@@ -51,14 +53,46 @@ def main() -> None:
             ),
         )
 
+        fractional_payload = json.loads(event.value)
+        fractional_payload["transaction"]["TRANSACTION_ID"] = "1001.5"
+        fractional_value = json.dumps(
+            fractional_payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+
         kafka_schema = T.StructType(
             [
-                T.StructField("key", T.BinaryType(), nullable=True),
-                T.StructField("value", T.BinaryType(), nullable=False),
-                T.StructField("topic", T.StringType(), nullable=False),
-                T.StructField("partition", T.IntegerType(), nullable=False),
-                T.StructField("offset", T.LongType(), nullable=False),
-                T.StructField("timestamp", T.TimestampType(), nullable=False),
+                T.StructField(
+                    "key",
+                    T.BinaryType(),
+                    nullable=True,
+                ),
+                T.StructField(
+                    "value",
+                    T.BinaryType(),
+                    nullable=False,
+                ),
+                T.StructField(
+                    "topic",
+                    T.StringType(),
+                    nullable=False,
+                ),
+                T.StructField(
+                    "partition",
+                    T.IntegerType(),
+                    nullable=False,
+                ),
+                T.StructField(
+                    "offset",
+                    T.LongType(),
+                    nullable=False,
+                ),
+                T.StructField(
+                    "timestamp",
+                    T.TimestampType(),
+                    nullable=False,
+                ),
             ]
         )
 
@@ -80,16 +114,39 @@ def main() -> None:
                     43,
                     datetime(2026, 10, 5, 13, 0, 1),
                 ),
+                (
+                    b"1001.5",
+                    fractional_value,
+                    "transactions.raw.v1",
+                    0,
+                    44,
+                    datetime(2026, 10, 5, 13, 0, 2),
+                ),
             ],
             schema=kafka_schema,
         )
 
         parsed = parse_kafka_transaction_events(kafka_records)
         projected = project_transaction_events(parsed)
-        rows = projected.orderBy("kafka_offset").collect()
+        typed = type_transaction_events(projected)
+
+        rows = typed.orderBy("kafka_offset").collect()
+        typed_columns = dict(typed.dtypes)
 
         assert len(transaction_event_schema().fields) == 7
-        assert len(rows) == 2
+        assert len(rows) == 3
+
+        assert typed_columns["produced_at"] == "timestamp"
+        assert typed_columns["source_date"] == "date"
+        assert typed_columns["transaction_id"] == "bigint"
+        assert typed_columns["tx_datetime"] == "timestamp"
+        assert typed_columns["customer_id"] == "bigint"
+        assert typed_columns["terminal_id"] == "bigint"
+        assert typed_columns["tx_amount"] == "double"
+        assert typed_columns["tx_time_seconds"] == "bigint"
+        assert typed_columns["tx_time_days"] == "bigint"
+        assert typed_columns["tx_fraud"] == "tinyint"
+        assert typed_columns["tx_fraud_scenario"] == "tinyint"
 
         valid = rows[0].asDict(recursive=True)
         assert valid["kafka_key"] == "1001"
@@ -100,18 +157,47 @@ def main() -> None:
         assert valid["source_file"] == "2018-04-01.pkl"
         assert valid["source_file_date"] == "2018-04-01"
         assert valid["source_row_number"] == 0
-        assert valid["TRANSACTION_ID"] == "1001"
-        assert valid["TX_DATETIME"] == "2018-04-01T08:00:00Z"
-        assert valid["TX_AMOUNT"] == "25.5"
+        assert valid["raw_transaction_id"] == "1001"
+        assert valid["raw_tx_datetime"] == "2018-04-01T08:00:00Z"
+        assert valid["raw_tx_amount"] == "25.5"
+
+        assert valid["source_date"] == date(2018, 4, 1)
+        assert valid["transaction_id"] == 1001
+        assert valid["tx_datetime"] == datetime(
+            2018,
+            4,
+            1,
+            8,
+            0,
+        )
+        assert valid["customer_id"] == 101
+        assert valid["terminal_id"] == 201
+        assert valid["tx_amount"] == 25.5
+        assert valid["tx_time_seconds"] == 28800
+        assert valid["tx_time_days"] == 0
+        assert valid["tx_fraud"] == 0
+        assert valid["tx_fraud_scenario"] == 0
 
         malformed = rows[1].asDict(recursive=True)
         assert malformed["kafka_key"] == "malformed"
         assert malformed["raw_event"] == "{not-valid-json"
         assert malformed["schema_version"] is None
         assert malformed["event_id"] is None
-        assert malformed["TRANSACTION_ID"] is None
+        assert malformed["raw_transaction_id"] is None
+        assert malformed["transaction_id"] is None
+        assert malformed["tx_datetime"] is None
+        assert malformed["tx_amount"] is None
 
-        print("Spark streaming parsing validation passed")
+        fractional = rows[2].asDict(recursive=True)
+        assert fractional["kafka_key"] == "1001.5"
+        assert fractional["kafka_offset"] == 44
+        assert fractional["raw_transaction_id"] == "1001.5"
+        assert fractional["transaction_id"] is None
+        assert fractional["customer_id"] == 101
+        assert fractional["terminal_id"] == 201
+        assert fractional["tx_amount"] == 25.5
+
+        print("Spark streaming parsing and type conversion validation passed")
     finally:
         spark.stop()
 
