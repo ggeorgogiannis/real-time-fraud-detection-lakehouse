@@ -1,0 +1,68 @@
+FROM apache/spark:4.2.0-python3 AS spark-distribution
+
+FROM python:3.11.16-slim-bookworm
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    SPARK_HOME=/opt/spark \
+    PYSPARK_PYTHON=/usr/local/bin/python3 \
+    PYSPARK_DRIVER_PYTHON=/usr/local/bin/python3 \
+    PATH="/opt/spark/bin:/opt/spark/sbin:${PATH}"
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        bash \
+        ca-certificates \
+        libgomp1 \
+        openjdk-17-jre-headless \
+        procps \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid "${APP_GID}" spark \
+    && useradd \
+        --create-home \
+        --uid "${APP_UID}" \
+        --gid "${APP_GID}" \
+        spark
+
+COPY --from=spark-distribution /opt/spark /opt/spark
+
+WORKDIR /opt/spark/app
+
+COPY pyproject.toml ./
+
+RUN python -c 'import tomllib; project = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(project["project"]["dependencies"]))' \
+        > /tmp/runtime-requirements.txt \
+    && python -m pip install \
+        "setuptools>=75" \
+        --requirement /tmp/runtime-requirements.txt \
+    && rm /tmp/runtime-requirements.txt
+
+COPY README.md LICENSE ./
+COPY src ./src
+
+RUN python -m pip install --no-deps --no-build-isolation . \
+    && mkdir -p \
+        /opt/spark/data \
+        /opt/spark/logs \
+        /opt/spark/work \
+        /opt/spark/work-dir \
+    && chown -R spark:spark \
+        /opt/spark/data \
+        /opt/spark/logs \
+        /opt/spark/work \
+        /opt/spark/work-dir
+
+USER spark
+
+WORKDIR /opt/spark/work-dir
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/opt/spark/bin/spark-submit", "--version"]
