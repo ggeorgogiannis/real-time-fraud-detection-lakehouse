@@ -131,7 +131,7 @@ def build_streaming_output_frames(
     )
 
 
-def _start_parquet_query(
+def start_parquet_query(
     frame: DataFrame,
     *,
     query_name: str,
@@ -196,7 +196,7 @@ def start_streaming_output_queries(
 
     try:
         for frame, query_name, output_path, checkpoint_path in query_specs:
-            query = _start_parquet_query(
+            query = start_parquet_query(
                 frame,
                 query_name=query_name,
                 output_path=output_path,
