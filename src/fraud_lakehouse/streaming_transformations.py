@@ -9,6 +9,8 @@ from fraud_lakehouse.streaming_events import (
 
 INTEGER_PATTERN = r"^[+-]?[0-9]+$"
 
+DEFAULT_TRANSACTION_WATERMARK_DELAY = "1 day"
+
 RAW_TRANSACTION_COLUMNS = {column: f"raw_{column.lower()}" for column in SOURCE_COLUMNS}
 
 UUID_PATTERN = (
@@ -203,6 +205,22 @@ def select_valid_transaction_events(
 ) -> DataFrame:
     """Return events accepted by the streaming data contract."""
     return validated_events.filter(F.col("is_valid"))
+
+
+def deduplicate_transaction_events(
+    valid_events: DataFrame,
+    watermark_delay: str = DEFAULT_TRANSACTION_WATERMARK_DELAY,
+) -> DataFrame:
+    """Deduplicate valid transactions using bounded event-time state."""
+    if not watermark_delay.strip():
+        raise ValueError("watermark_delay must not be empty")
+
+    return valid_events.withWatermark(
+        "tx_datetime",
+        watermark_delay,
+    ).dropDuplicatesWithinWatermark(
+        ["transaction_id"],
+    )
 
 
 def select_quarantined_transaction_events(
