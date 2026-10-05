@@ -76,5 +76,29 @@ services:
       - --config
       - retention.ms=604800000
 
+  transaction-producer:
+    profiles:
+      - replay
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fraud-lakehouse-producer:local
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    command:
+      - replay-transactions
+      - --raw-dir
+      - /app/data/raw
+      - --bootstrap-servers
+      - kafka:19092
+      - --topic
+      - transactions.raw.v1
+      - --events-per-second
+      - "100"
+    volumes:
+      - ./data/raw:/app/data/raw:ro
+    init: true
+
 volumes:
   kafka-data:
