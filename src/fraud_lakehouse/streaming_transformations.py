@@ -422,3 +422,75 @@ def type_transaction_events(
             ),
         )
     )
+
+
+def project_streaming_bronze(
+    parsed_events: DataFrame,
+) -> DataFrame:
+    """Create the immutable raw streaming Bronze representation."""
+    return parsed_events.select(
+        "kafka_key",
+        "raw_event",
+        "kafka_topic",
+        "kafka_partition",
+        "kafka_offset",
+        "kafka_timestamp",
+        F.col("kafka_timestamp").alias("ingested_at_utc"),
+    )
+
+
+def project_streaming_silver(
+    deduplicated_events: DataFrame,
+) -> DataFrame:
+    """Create canonical Silver transactions with streaming metadata."""
+    return deduplicated_events.select(
+        "transaction_id",
+        "tx_datetime",
+        "customer_id",
+        "terminal_id",
+        "tx_amount",
+        "tx_time_seconds",
+        "tx_time_days",
+        "tx_fraud",
+        "tx_fraud_scenario",
+        "source_file",
+        F.col("source_date").alias("source_file_date"),
+        "source_row_number",
+        F.col("kafka_timestamp").alias("ingested_at_utc"),
+        "schema_version",
+        "event_id",
+        F.col("produced_at").alias("produced_at_utc"),
+        "kafka_key",
+        "kafka_topic",
+        "kafka_partition",
+        "kafka_offset",
+        "kafka_timestamp",
+    )
+
+
+def project_streaming_quarantine(
+    quarantined_events: DataFrame,
+) -> DataFrame:
+    """Preserve rejected events, raw values and rejection reasons."""
+    transaction_columns = [
+        F.col(raw_column).alias(source_column)
+        for source_column, raw_column in RAW_TRANSACTION_COLUMNS.items()
+    ]
+
+    return quarantined_events.select(
+        *transaction_columns,
+        "source_file",
+        "source_file_date",
+        "source_row_number",
+        F.col("kafka_timestamp").alias("ingested_at_utc"),
+        "schema_version",
+        "event_id",
+        "produced_at_utc",
+        "kafka_key",
+        "raw_event",
+        "kafka_topic",
+        "kafka_partition",
+        "kafka_offset",
+        "kafka_timestamp",
+        "rejection_reasons",
+    )
