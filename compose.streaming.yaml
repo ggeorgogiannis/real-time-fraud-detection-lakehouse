@@ -1,0 +1,180 @@
+name: fraud-lakehouse-streaming
+
+services:
+  kafka:
+    depends_on:
+      kafka-data-init:
+        condition: service_completed_successfully
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+        CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: >-
+        CONTROLLER://:29093,INTERNAL://:19092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: >-
+        INTERNAL://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/kafka/bin/kafka-broker-api-versions.sh
+          --bootstrap-server localhost:9092
+          > /dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  kafka-data-init:
+    image: apache/kafka:4.3.1
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - chown -R 1000:1000 /tmp/kraft-combined-logs
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      - /opt/kafka/bin/kafka-topics.sh
+    command:
+      - --bootstrap-server
+      - kafka:19092
+      - --create
+      - --if-not-exists
+      - --topic
+      - transactions.raw.v1
+      - --partitions
+      - "3"
+      - --replication-factor
+      - "1"
+      - --config
+      - retention.ms=604800000
+
+  spark-ingestion:
+    profiles:
+      - pipeline
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: fraud-lakehouse-spark:local
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[2]
+      - --packages
+      - org.apache.spark:spark-sql-kafka-0-10_2.13:4.2.0
+      - --conf
+      - spark.jars.ivy=/opt/spark/ivy
+      - --conf
+      - spark.sql.shuffle.partitions=2
+      - --conf
+      - spark.ui.enabled=false
+      - /opt/spark/app/src/fraud_lakehouse/streaming_ingestion_job.py
+      - --bootstrap-servers
+      - kafka:19092
+      - --topic
+      - transactions.raw.v1
+      - --output-root
+      - /opt/spark/data/streaming/lakehouse
+      - --checkpoint-root
+      - /opt/spark/data/streaming/checkpoints/ingestion
+      - --watermark-delay
+      - 1 day
+      - --trigger-interval
+      - 10 seconds
+    volumes:
+      - ./data:/opt/spark/data
+      - spark-ivy:/opt/spark/ivy
+    stop_grace_period: 30s
+
+  spark-gold:
+    profiles:
+      - pipeline
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: fraud-lakehouse-spark:local
+    depends_on:
+      spark-ingestion:
+        condition: service_started
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[2]
+      - --conf
+      - spark.sql.shuffle.partitions=2
+      - --conf
+      - spark.ui.enabled=false
+      - /opt/spark/app/src/fraud_lakehouse/streaming_gold_job.py
+      - --silver-input
+      - /opt/spark/data/streaming/lakehouse/silver
+      - --output-root
+      - /opt/spark/data/streaming/lakehouse/gold
+      - --checkpoint-root
+      - /opt/spark/data/streaming/checkpoints/gold
+      - --window-duration
+      - 1 hour
+      - --watermark-delay
+      - 10 minutes
+      - --trigger-interval
+      - 10 seconds
+    volumes:
+      - ./data:/opt/spark/data
+    stop_grace_period: 30s
+
+  transaction-producer:
+    profiles:
+      - replay
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fraud-lakehouse-producer:local
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    command:
+      - replay-transactions
+      - --raw-dir
+      - /app/data/raw
+      - --bootstrap-servers
+      - kafka:19092
+      - --topic
+      - transactions.raw.v1
+      - --events-per-second
+      - "100"
+    volumes:
+      - ./data/raw:/app/data/raw:ro
+    init: true
+
+volumes:
+  kafka-data:
+  spark-ivy:

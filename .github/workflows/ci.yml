@@ -118,3 +118,75 @@ jobs:
               "build_analytics_database"
           }
           PY
+
+  streaming:
+    name: Streaming checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate streaming Compose configuration
+        run: |
+          docker compose \
+            --file compose.streaming.yaml \
+            --profile pipeline \
+            --profile replay \
+            config > /dev/null
+
+      - name: Build Spark image
+        run: |
+          docker build \
+            --file Dockerfile.spark \
+            --tag fraud-lakehouse-spark:ci \
+            .
+
+      - name: Verify Spark runtime
+        run: docker run --rm fraud-lakehouse-spark:ci
+
+      - name: Verify non-root execution
+        run: |
+          test "$(
+            docker run \
+              --rm \
+              --entrypoint id \
+              fraud-lakehouse-spark:ci \
+              -u
+          )" != "0"
+
+      - name: Verify streaming job entry points
+        run: |
+          docker run \
+            --rm \
+            --entrypoint /opt/spark/bin/spark-submit \
+            fraud-lakehouse-spark:ci \
+            /opt/spark/app/src/fraud_lakehouse/streaming_ingestion_job.py \
+            --help
+
+          docker run \
+            --rm \
+            --entrypoint /opt/spark/bin/spark-submit \
+            fraud-lakehouse-spark:ci \
+            /opt/spark/app/src/fraud_lakehouse/streaming_gold_job.py \
+            --help
+
+      - name: Run Spark streaming validations
+        run: |
+          for script in \
+            validate_streaming_parsing.py \
+            validate_streaming_quality.py \
+            validate_streaming_deduplication.py \
+            validate_streaming_outputs.py \
+            validate_streaming_pipeline.py \
+            validate_streaming_gold.py \
+            validate_streaming_gold_pipeline.py
+          do
+            docker run \
+              --rm \
+              --volume "${PWD}/tests/spark:/opt/spark/tests:ro" \
+              --entrypoint /opt/spark/bin/spark-submit \
+              fraud-lakehouse-spark:ci \
+              "/opt/spark/tests/${script}"
+          done

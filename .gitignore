@@ -225,6 +225,7 @@ __marimo__/
 /data/quarantine/
 /data/ml/
 /data/models/
+/data/streaming/
 *.parquet
 *.pkl
 /models/

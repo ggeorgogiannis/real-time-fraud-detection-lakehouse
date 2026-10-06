@@ -13,6 +13,7 @@ from fraud_lakehouse.optimization import (
     HyperparameterOptimizationOutputs,
 )
 from fraud_lakehouse.pipeline import BatchPipelineResult
+from fraud_lakehouse.streaming_producer import ReplayResult
 from fraud_lakehouse.threshold_optimization import (
     ThresholdOptimizationOutputs,
 )
@@ -391,3 +392,62 @@ def test_main_evaluates_final_policy(
     assert "model=xgboost" in caplog.text
     assert "threshold=0.615461" in caplog.text
     assert f"results_path={output_dir / 'final_evaluation.json'}" in caplog.text
+
+
+def test_main_replays_transactions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_dir = tmp_path / "raw"
+
+    def fake_replay_transactions(
+        *,
+        raw_dir: Path,
+        bootstrap_servers: str,
+        topic: str,
+        events_per_second: float,
+        max_events: int | None,
+    ) -> ReplayResult:
+        assert raw_dir == tmp_path / "raw"
+        assert bootstrap_servers == "kafka:19092"
+        assert topic == "transactions.raw.v1"
+        assert events_per_second == 25.0
+        assert max_events == 50
+
+        return ReplayResult(
+            source_files=(
+                raw_dir / "2018-04-01.pkl",
+                raw_dir / "2018-04-02.pkl",
+            ),
+            events_produced=50,
+        )
+
+    monkeypatch.setattr(
+        cli,
+        "replay_transactions",
+        fake_replay_transactions,
+    )
+    caplog.set_level(logging.INFO)
+
+    exit_code = cli.main(
+        [
+            "replay-transactions",
+            "--raw-dir",
+            str(raw_dir),
+            "--bootstrap-servers",
+            "kafka:19092",
+            "--topic",
+            "transactions.raw.v1",
+            "--events-per-second",
+            "25",
+            "--max-events",
+            "50",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "transaction_replay_completed" in caplog.text
+    assert "source_files=2" in caplog.text
+    assert "events_produced=50" in caplog.text
+    assert "topic=transactions.raw.v1" in caplog.text

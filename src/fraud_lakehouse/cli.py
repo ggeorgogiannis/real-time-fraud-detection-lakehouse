@@ -13,6 +13,8 @@ from fraud_lakehouse.optimization import (
     optimize_and_publish_hyperparameters,
 )
 from fraud_lakehouse.pipeline import run_batch_pipeline
+from fraud_lakehouse.streaming_events import TRANSACTION_TOPIC
+from fraud_lakehouse.streaming_producer import replay_transactions
 from fraud_lakehouse.threshold_optimization import (
     optimize_and_publish_thresholds,
 )
@@ -78,6 +80,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional timezone-aware ingestion timestamp.",
     )
     _add_log_level_argument(run_parser)
+
+    replay_parser = subparsers.add_parser(
+        "replay-transactions",
+        help="Replay daily transaction files into Kafka.",
+    )
+    replay_parser.add_argument(
+        "--raw-dir",
+        type=Path,
+        required=True,
+        help="Directory containing trusted daily transaction files.",
+    )
+    replay_parser.add_argument(
+        "--bootstrap-servers",
+        default="localhost:9092",
+        help="Comma-separated Kafka bootstrap servers.",
+    )
+    replay_parser.add_argument(
+        "--topic",
+        default=TRANSACTION_TOPIC,
+        help="Kafka topic that receives raw transaction events.",
+    )
+    replay_parser.add_argument(
+        "--events-per-second",
+        type=float,
+        default=100.0,
+        help=("Maximum replay rate. Use zero to produce without rate limiting."),
+    )
+    replay_parser.add_argument(
+        "--max-events",
+        type=int,
+        help="Optional maximum number of events to produce.",
+    )
+    _add_log_level_argument(replay_parser)
 
     analytics_parser = subparsers.add_parser(
         "build-analytics",
@@ -297,6 +332,27 @@ def _run_pipeline_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _replay_transactions_command(
+    arguments: argparse.Namespace,
+) -> int:
+    result = replay_transactions(
+        raw_dir=arguments.raw_dir,
+        bootstrap_servers=arguments.bootstrap_servers,
+        topic=arguments.topic,
+        events_per_second=arguments.events_per_second,
+        max_events=arguments.max_events,
+    )
+
+    LOGGER.info(
+        ("transaction_replay_completed source_files=%d events_produced=%d topic=%s"),
+        len(result.source_files),
+        result.events_produced,
+        arguments.topic,
+    )
+
+    return 0
+
+
 def _build_analytics_command(arguments: argparse.Namespace) -> int:
     database_path = build_analytics_database(
         silver_dir=arguments.silver_dir,
@@ -433,7 +489,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.command == "run":
             return _run_pipeline_command(arguments)
-
+        if arguments.command == "replay-transactions":
+            return _replay_transactions_command(arguments)
         if arguments.command == "build-analytics":
             return _build_analytics_command(arguments)
 
@@ -447,7 +504,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _optimize_thresholds_command(arguments)
         if arguments.command == "evaluate-final-policy":
             return _evaluate_final_policy_command(arguments)
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
         LOGGER.error(
             "command_failed command=%s error=%s",
             arguments.command,
