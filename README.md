@@ -28,6 +28,8 @@ On the final test period, the policy achieved transaction-level Average Precisio
 
 Phase 4 is complete. The application runs as a non-root Docker image through Docker Compose, and Apache Airflow 3.3.1 schedules and monitors the daily batch and analytics workflow. PostgreSQL stores orchestration metadata, while LocalExecutor runs tasks on the local development machine. Continuous integration validates the Airflow Compose configuration, runtime image, packaged CLI, non-root execution and DAG structure.
 
+Phase 5 is complete. Trusted daily transaction files can be replayed as versioned Kafka events and processed by Spark Structured Streaming. The streaming pipeline preserves immutable Bronze events, validates and quarantines malformed data, creates typed and watermark-deduplicated Silver transactions, and publishes one-hour customer and terminal risk aggregates. Independent checkpoints provide restart-safe recovery, while Docker Compose and continuous integration validate the complete local runtime.
+
 ## Why This Project
 
 Fraud detection is often presented only as a classification problem. In practice, the model depends on a larger data system that must handle ingestion, validation, historical features, reproducibility and monitoring.
@@ -46,6 +48,12 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 
 `Airflow -> Scheduled batch pipeline -> DuckDB analytical database`
 
+`Daily transaction files -> Kafka replay producer -> transactions.raw.v1`
+
+`Kafka -> Spark Structured Streaming -> Streaming Bronze, Silver and quarantine`
+
+`Streaming Silver -> Event-time windows -> Customer and terminal risk aggregates`
+
 | Component   | Responsibility                                                          |
 | ----------- | ----------------------------------------------------------------------- |
 | Bronze      | Store ingested transactions with minimal changes and ingestion metadata |
@@ -59,8 +67,12 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 | Compose     | Mount local data and provide repeatable container execution commands    |
 | Airflow     | Schedule and monitor the daily batch and analytics workflow             |
 | PostgreSQL  | Store Airflow metadata, task states and DAG-run history                 |
+| Kafka | Store and partition versioned raw transaction events |
+| Spark ingestion | Parse, validate, quarantine and deduplicate streaming transactions |
+| Spark Gold | Create event-time customer and terminal risk-window aggregates |
+| Checkpoints | Preserve offsets, state and sink progress across streaming restarts |
 
-The completed batch pipeline provides the common foundation for the analytical and machine-learning workflows. It will also serve as the reference implementation for the later Kafka and Spark streaming pipeline.
+The batch and streaming paths share the same transaction contract and lakehouse principles. The batch implementation remains the reproducible reference for historical processing, analytics and model development, while Kafka and Spark provide incremental event processing, bounded state and restart-safe streaming outputs.
 
 ## Dataset
 
@@ -200,7 +212,13 @@ Phase 4 is complete. The application runs as a non-root Docker container through
 
 ### Phase 5: Streaming Pipeline
 
-Simulate live transactions through Kafka and process them with Spark Structured Streaming.
+Phase 5 is complete. A deterministic replay producer converts trusted daily transaction files into versioned events on a three-partition Kafka topic. Spark Structured Streaming parses the explicit event schema, applies canonical typing and accumulated quality rules, quarantines rejected events, and deduplicates valid transactions using bounded event-time state.
+
+Independent streaming queries persist immutable Bronze events, canonical Silver transactions and quarantine records to Parquet with separate checkpoints. A second Spark job reads persisted Silver data and publishes one-hour customer and terminal risk windows using a ten-minute watermark. Fraud labels remain available in Silver for offline evaluation but are excluded from operational Gold aggregates.
+
+Docker Compose provides the complete local runtime, and continuous integration validates the Spark image, non-root execution, job entry points, transformations, persistence, checkpoint recovery and Gold aggregations.
+
+See [`docs/streaming-pipeline.md`](docs/streaming-pipeline.md) for the architecture, event contract, operating commands, checkpoint behavior and local-development limitations.
 
 ### Phase 6: MLOps and Deployment
 
@@ -254,6 +272,18 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Orchestrate the batch pipeline with an Airflow DAG.
 - [x] Add Airflow operating documentation.
 - [x] Add automated Airflow DAG validation.
+- [x] Define the versioned streaming transaction-event contract.
+- [x] Add the local Kafka broker and transaction topic.
+- [x] Implement deterministic transaction replay.
+- [x] Build the non-root Spark runtime.
+- [x] Parse and type Kafka transaction events.
+- [x] Validate and quarantine malformed streaming events.
+- [x] Add watermark-bounded transaction deduplication.
+- [x] Persist restart-safe streaming Bronze, Silver and quarantine outputs.
+- [x] Create customer and terminal event-time risk windows.
+- [x] Persist restart-safe streaming Gold aggregates.
+- [x] Run the Kafka and Spark pipeline through Docker Compose.
+- [x] Add streaming operating documentation and CI validation.
 
 ## Running the Project
 
@@ -349,6 +379,66 @@ The Airflow interface is available at `http://localhost:8080`.
 The `fraud_lakehouse_daily` DAG runs daily at `02:00 UTC`. It executes the batch pipeline before rebuilding the DuckDB analytical database.
 
 See [`docs/airflow-orchestration.md`](docs/airflow-orchestration.md) for environment configuration, DAG behavior, manual execution, validation, monitoring and shutdown commands.
+
+### Run the Streaming Pipeline
+
+Build the Spark runtime:
+
+```bash
+docker compose \
+  --file compose.streaming.yaml \
+  --profile pipeline \
+  build \
+  spark-ingestion \
+  spark-gold
+```
+
+Start Kafka, Spark ingestion and Spark Gold:
+
+```bash
+docker compose \
+  --file compose.streaming.yaml \
+  --profile pipeline \
+  up \
+  --detach \
+  --wait \
+  kafka \
+  spark-ingestion \
+  spark-gold
+```
+
+Place trusted daily Pickle files in `data/raw`, then replay a bounded sample into Kafka:
+
+```bash
+docker compose \
+  --file compose.streaming.yaml \
+  --profile replay \
+  run \
+  --rm \
+  transaction-producer \
+  replay-transactions \
+  --raw-dir /app/data/raw \
+  --bootstrap-servers kafka:19092 \
+  --topic transactions.raw.v1 \
+  --events-per-second 0 \
+  --max-events 1000
+```
+
+This bounded command provides a quick local validation. Remove `--max-events` and choose a positive event rate to simulate the complete transaction stream over time.
+
+The streaming services persist Bronze, Silver, quarantine, Gold and checkpoint data under `data/streaming/`.
+
+Stop the stack without deleting persistent Kafka or connector-cache volumes:
+
+```bash
+docker compose \
+  --file compose.streaming.yaml \
+  --profile pipeline \
+  --profile replay \
+  down
+```
+
+See [`docs/streaming-pipeline.md`](docs/streaming-pipeline.md) for the event contract, output paths, replay controls, monitoring, checkpoint recovery and reset procedure.
 
 ### Build the Machine-Learning Dataset
 
