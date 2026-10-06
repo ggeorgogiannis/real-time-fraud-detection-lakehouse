@@ -51,11 +51,13 @@ COPY src ./src
 RUN python -m pip install --no-deps --no-build-isolation . \
     && mkdir -p \
         /opt/spark/data \
+        /opt/spark/ivy \
         /opt/spark/logs \
         /opt/spark/work \
         /opt/spark/work-dir \
     && chown -R spark:spark \
         /opt/spark/data \
+        /opt/spark/ivy \
         /opt/spark/logs \
         /opt/spark/work \
         /opt/spark/work-dir

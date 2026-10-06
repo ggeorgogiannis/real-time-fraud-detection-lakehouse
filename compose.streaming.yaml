@@ -76,6 +76,81 @@ services:
       - --config
       - retention.ms=604800000
 
+  spark-ingestion:
+    profiles:
+      - pipeline
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: fraud-lakehouse-spark:local
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[2]
+      - --packages
+      - org.apache.spark:spark-sql-kafka-0-10_2.13:4.2.0
+      - --conf
+      - spark.jars.ivy=/opt/spark/ivy
+      - --conf
+      - spark.sql.shuffle.partitions=2
+      - --conf
+      - spark.ui.enabled=false
+      - /opt/spark/app/src/fraud_lakehouse/streaming_ingestion_job.py
+      - --bootstrap-servers
+      - kafka:19092
+      - --topic
+      - transactions.raw.v1
+      - --output-root
+      - /opt/spark/data/streaming/lakehouse
+      - --checkpoint-root
+      - /opt/spark/data/streaming/checkpoints/ingestion
+      - --watermark-delay
+      - 1 day
+      - --trigger-interval
+      - 10 seconds
+    volumes:
+      - ./data:/opt/spark/data
+      - spark-ivy:/opt/spark/ivy
+    stop_grace_period: 30s
+
+  spark-gold:
+    profiles:
+      - pipeline
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: fraud-lakehouse-spark:local
+    depends_on:
+      spark-ingestion:
+        condition: service_started
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[2]
+      - --conf
+      - spark.sql.shuffle.partitions=2
+      - --conf
+      - spark.ui.enabled=false
+      - /opt/spark/app/src/fraud_lakehouse/streaming_gold_job.py
+      - --silver-input
+      - /opt/spark/data/streaming/lakehouse/silver
+      - --output-root
+      - /opt/spark/data/streaming/lakehouse/gold
+      - --checkpoint-root
+      - /opt/spark/data/streaming/checkpoints/gold
+      - --window-duration
+      - 1 hour
+      - --watermark-delay
+      - 10 minutes
+      - --trigger-interval
+      - 10 seconds
+    volumes:
+      - ./data:/opt/spark/data
+    stop_grace_period: 30s
+
   transaction-producer:
     profiles:
       - replay
@@ -102,3 +177,4 @@ services:
 
 volumes:
   kafka-data:
+  spark-ivy:
