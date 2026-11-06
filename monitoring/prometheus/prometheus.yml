@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: fraud-scoring-api
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names:
+          - scoring-api-metrics
+        type: A
+        port: 8000
+        refresh_interval: 5s

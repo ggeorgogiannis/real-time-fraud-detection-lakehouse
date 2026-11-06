@@ -238,3 +238,6 @@ dbt/.user.yml
 
 # Airflow local runtime
 /airflow/logs/
+
+# MLOps local runtime
+/.env.mlops

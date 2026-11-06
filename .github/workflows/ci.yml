@@ -190,3 +190,109 @@ jobs:
               fraud-lakehouse-spark:ci \
               "/opt/spark/tests/${script}"
           done
+
+  mlops:
+      name: MLOps and Kubernetes checks
+      runs-on: ubuntu-latest
+      timeout-minutes: 30
+
+      steps:
+        - name: Check out repository
+          uses: actions/checkout@v4
+
+        - name: Validate MLOps Compose configuration
+          run: |
+            docker compose \
+              --env-file .env.mlops.example \
+              --file compose.mlops.yaml \
+              config > /dev/null
+
+        - name: Validate Prometheus configuration
+          run: |
+            docker run \
+              --rm \
+              --volume "${PWD}/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+              --entrypoint /bin/promtool \
+              prom/prometheus:v3.16.0 \
+              check config \
+              /etc/prometheus/prometheus.yml
+
+        - name: Build MLflow image
+          run: |
+            docker build \
+              --file Dockerfile.mlflow \
+              --tag fraud-lakehouse-mlflow:ci \
+              .
+
+        - name: Verify MLflow runtime
+          run: |
+            docker run \
+              --rm \
+              --entrypoint mlflow \
+              fraud-lakehouse-mlflow:ci \
+              --version
+
+            docker run \
+              --rm \
+              --entrypoint python \
+              fraud-lakehouse-mlflow:ci \
+              -c "import mlflow, psycopg2; assert mlflow.__version__ == '3.10.1'"
+
+        - name: Verify non-root MLflow execution
+          run: |
+            test "$(
+              docker run \
+                --rm \
+                --entrypoint id \
+                fraud-lakehouse-mlflow:ci \
+                -u
+            )" != "0"
+
+        - name: Build scoring image
+          run: |
+            docker build \
+              --file Dockerfile.scoring \
+              --tag fraud-lakehouse-scoring:ci \
+              .
+
+        - name: Verify scoring runtime
+          run: |
+            docker run \
+              --rm \
+              --entrypoint python \
+              fraud-lakehouse-scoring:ci \
+              -c "import fastapi, mlflow, prometheus_client, uvicorn; import fraud_lakehouse.scoring_api"
+
+        - name: Verify non-root scoring execution
+          run: |
+            test "$(
+              docker run \
+                --rm \
+                --entrypoint id \
+                fraud-lakehouse-scoring:ci \
+                -u
+            )" != "0"
+
+        - name: Render Kubernetes manifests
+          run: |
+            kubectl version --client
+
+            for directory in \
+              kubernetes/mlflow \
+              kubernetes/scoring \
+              kubernetes/observability
+            do
+              rendered="/tmp/$(basename "${directory}")-manifests.yaml"
+
+              kubectl kustomize "${directory}" > "${rendered}"
+
+              test -s "${rendered}"
+              grep -q '^kind:' "${rendered}"
+            done
+
+        - name: Validate Kubernetes deployment scripts
+          run: |
+            for script in kubernetes/*.sh
+            do
+              bash -n "${script}"
+            done
