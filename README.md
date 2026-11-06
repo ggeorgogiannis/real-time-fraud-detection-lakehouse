@@ -2,7 +2,7 @@
 
 A local-first data engineering project for processing transaction data and detecting fraud.
 
-The project begins as a tested batch pipeline and will gradually evolve into a streaming lakehouse. Each new tool will be introduced only when the existing implementation creates a clear reason to use it.
+The project combines a tested batch lakehouse, analytical and machine-learning workflows, Kafka and Spark streaming, and a locally deployed MLOps platform. Each tool is introduced only where the preceding implementation creates a clear reason to use it.
 
 ## Current Status
 
@@ -28,7 +28,9 @@ On the final test period, the policy achieved transaction-level Average Precisio
 
 Phase 4 is complete and was published as [v0.4.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.4.0). The application runs as a non-root Docker image through Docker Compose, and Apache Airflow 3.3.1 schedules and monitors the daily batch and analytics workflow. PostgreSQL stores orchestration metadata, while LocalExecutor runs tasks on the local development machine. Continuous integration validates the Airflow Compose configuration, runtime image, packaged CLI, non-root execution and DAG structure.
 
-Phase 5 is complete. Trusted daily transaction files can be replayed as versioned Kafka events and processed by Spark Structured Streaming. The streaming pipeline preserves immutable Bronze events, validates and quarantines malformed data, creates typed and watermark-deduplicated Silver transactions, and publishes one-hour customer and terminal risk aggregates. Independent checkpoints provide restart-safe recovery, while Docker Compose and continuous integration validate the complete local runtime.
+Phase 5 is complete and was published as [v0.5.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.5.0). Trusted daily transaction files can be replayed as versioned Kafka events and processed by Spark Structured Streaming. The streaming pipeline preserves immutable Bronze events, validates and quarantines malformed data, creates typed and watermark-deduplicated Silver transactions, and publishes one-hour customer and terminal risk aggregates. Independent checkpoints provide restart-safe recovery, while Docker Compose and continuous integration validate the complete local runtime.
+
+Phase 6 is complete. The approved XGBoost policy is packaged and registered in MLflow with an immutable model version and a deployable `champion` alias. A non-root FastAPI service provides validated batch scoring, health endpoints and Prometheus metrics. Grafana provisions an operational dashboard, while Docker Compose and a local kind Kubernetes cluster provide persistent, restart-safe deployments. Continuous integration validates the Python behavior, runtime images, Compose configuration, Prometheus configuration, Kubernetes manifests and deployment scripts.
 
 ## Why This Project
 
@@ -54,6 +56,14 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 
 `Streaming Silver -> Event-time windows -> Customer and terminal risk aggregates`
 
+`Approved fraud policy -> MLflow registry -> champion model alias`
+
+`Clients -> FastAPI scoring service -> Approved threshold decisions`
+
+`Scoring metrics -> Prometheus -> Grafana operational dashboard`
+
+`kind -> Kubernetes deployments -> Persistent local MLOps platform`
+
 | Component   | Responsibility                                                          |
 | ----------- | ----------------------------------------------------------------------- |
 | Bronze      | Store ingested transactions with minimal changes and ingestion metadata |
@@ -66,11 +76,16 @@ This project focuses on that complete workflow. Its purpose is to explore how th
 | Docker      | Package the application and dependencies into a reproducible runtime    |
 | Compose     | Mount local data and provide repeatable container execution commands    |
 | Airflow     | Schedule and monitor the daily batch and analytics workflow             |
-| PostgreSQL  | Store Airflow metadata, task states and DAG-run history                 |
+| PostgreSQL | Store Airflow orchestration metadata and MLflow registry metadata |
 | Kafka | Store and partition versioned raw transaction events |
 | Spark ingestion | Parse, validate, quarantine and deduplicate streaming transactions |
 | Spark Gold | Create event-time customer and terminal risk-window aggregates |
 | Checkpoints | Preserve offsets, state and sink progress across streaming restarts |
+| MLflow | Track approval runs, store artifacts and register approved model versions |
+| Scoring API | Serve the registered champion policy through validated HTTP requests |
+| Prometheus | Collect per-replica scoring availability, latency and prediction metrics |
+| Grafana | Visualize scoring health, traffic, latency and model behavior |
+| Kubernetes | Deploy persistent MLflow, scoring and observability services locally |
 
 The batch and streaming paths share the same transaction contract and lakehouse principles. The batch implementation remains the reproducible reference for historical processing, analytics and model development, while Kafka and Spark provide incremental event processing, bounded state and restart-safe streaming outputs.
 
@@ -101,9 +116,9 @@ The repository includes small synthetic fixtures for automated tests. These fixt
 
 ## Local-First Development
 
-The complete platform will run locally without paid cloud services or subscriptions.
+The complete platform runs locally without paid cloud services or subscriptions.
 
-The planned stack includes:
+The implemented stack includes:
 
 | Area                       | Tools                               |
 | -------------------------- | ----------------------------------- |
@@ -115,10 +130,11 @@ The planned stack includes:
 | Distributed processing     | Apache Spark                        |
 | Event streaming            | Apache Kafka                        |
 | Experiment tracking        | MLflow                              |
-| Visualization              | Streamlit or Apache Superset        |
-| Container orchestration    | kind or Minikube                    |
+| Model serving              | FastAPI and Uvicorn                 |
+| Monitoring                 | Prometheus and Grafana              |
+| Container orchestration    | Kubernetes with kind                |
 
-The stack may change as the project develops. Significant changes will be documented together with the reasoning behind them.
+All services run locally through reproducible Python, Docker Compose and Kubernetes workflows. Significant architectural decisions and operational limitations are documented with the implementation.
 
 ## Development Plan
 
@@ -132,7 +148,7 @@ Completed in [v0.1.0](https://github.com/ggeorgogiannis/real-time-fraud-detectio
 
 Phase 2 is complete. DuckDB provides persistent SQL views over the Silver and Gold Parquet outputs, while dbt builds staging views, a daily fraud fact table, seven-day customer and terminal risk marts, and a reporting-ready daily fraud overview. The analytical layer is covered by source, schema, uniqueness, range, reconciliation and Python integration tests.
 
-The risk marts include observed fraud labels for analytical reporting and must not be used directly as machine-learning features. Phase 3 will introduce leakage-safe, time-aware model datasets and baseline fraud models.
+The risk marts include observed fraud labels for analytical reporting and must not be used directly as machine-learning features. Phase 3 introduced leakage-safe, time-aware model datasets and baseline fraud models.
 
 Completed in [v0.2.0](https://github.com/ggeorgogiannis/real-time-fraud-detection-lakehouse/releases/tag/v0.2.0).
 
@@ -222,11 +238,19 @@ See [`docs/streaming-pipeline.md`](docs/streaming-pipeline.md) for the architect
 
 ### Phase 6: MLOps and Deployment
 
-Track experiments with MLflow, add monitoring and deploy the completed platform to a local Kubernetes cluster.
+Phase 6 is complete. The selected Phase 3 fraud policy is validated as one deployable artifact containing the fitted preprocessing pipeline, XGBoost model, decision threshold, alert-capacity metadata and locked evaluation evidence.
+
+MLflow records the approval run, stores the policy artifacts and exposes the approved version through the `champion` alias. A non-root FastAPI service resolves that alias during startup and publishes typed batch scoring, liveness, readiness and Prometheus endpoints. The endpoint applies the approved transaction threshold but explicitly leaves daily customer-card capacity enforcement to a stateful downstream decision process.
+
+Prometheus discovers both Kubernetes scoring replicas independently, while Grafana provisions the `Fraud Scoring Operations` dashboard. Docker Compose provides the local development runtime, and kind deploys persistent MLflow, PostgreSQL, scoring, Prometheus and Grafana workloads to a local Kubernetes cluster.
+
+Continuous integration validates the approved-policy contract, MLflow registration, scoring API, container images, non-root execution, Compose configuration, Prometheus configuration, Kubernetes manifests and deployment scripts.
+
+See [`docs/mlops-deployment.md`](docs/mlops-deployment.md) for architecture, registration, scoring, monitoring, Docker Compose, Kubernetes, restart recovery and reset procedures.
 
 ## Development Practices
 
-The project will use:
+The project uses:
 
 * Short-lived Git branches and pull requests.
 * Conventional commit messages.
@@ -284,6 +308,18 @@ Comments will explain business rules and non-obvious decisions rather than resta
 - [x] Persist restart-safe streaming Gold aggregates.
 - [x] Run the Kafka and Spark pipeline through Docker Compose.
 - [x] Add streaming operating documentation and CI validation.
+- [x] Add the local MLflow tracking server and model registry.
+- [x] Define and validate the approved fraud-policy artifact.
+- [x] Register the approved policy with an immutable version and champion alias.
+- [x] Serve the registered policy through a non-root FastAPI scoring service.
+- [x] Publish scoring health and operational Prometheus metrics.
+- [x] Provision the Grafana fraud-scoring dashboard.
+- [x] Run the complete MLOps platform through Docker Compose.
+- [x] Create the local Kubernetes cluster with kind.
+- [x] Deploy persistent MLflow and PostgreSQL services to Kubernetes.
+- [x] Deploy replicated fraud scoring to Kubernetes.
+- [x] Deploy Prometheus and Grafana to Kubernetes.
+- [x] Add MLOps operating documentation and CI validation.
 
 ## Running the Project
 
@@ -379,6 +415,83 @@ The Airflow interface is available at `http://localhost:8080`.
 The `fraud_lakehouse_daily` DAG runs daily at `02:00 UTC`. It executes the batch pipeline before rebuilding the DuckDB analytical database.
 
 See [`docs/airflow-orchestration.md`](docs/airflow-orchestration.md) for environment configuration, DAG behavior, manual execution, validation, monitoring and shutdown commands.
+
+### Run the MLOps Platform
+
+Create the local MLOps environment file and replace its password placeholders:
+
+```bash
+cp .env.mlops.example .env.mlops
+```
+
+Build and start MLflow:
+
+```bash
+docker compose \
+  --env-file .env.mlops \
+  --file compose.mlops.yaml \
+  build \
+  mlflow \
+  scoring-api
+
+docker compose \
+  --env-file .env.mlops \
+  --file compose.mlops.yaml \
+  up \
+  --detach \
+  --wait \
+  mlflow
+```
+
+Register the approved Phase 3 policy:
+
+```bash
+python -m fraud_lakehouse.mlflow_registry_job \
+  --tracking-uri http://127.0.0.1:5000 \
+  --experiment-name fraud-policy-registration \
+  --registered-model-name fraud-detection-policy \
+  --alias champion \
+  --model-dir data/models \
+  --policy-path data/models/threshold_policy.json \
+  --evaluation-path data/models/final_evaluation.json \
+  --input-example-path data/ml/test.parquet \
+  --input-example-rows 5 \
+  --source-revision "$(git rev-parse HEAD)"
+```
+
+Start scoring and observability:
+
+```bash
+docker compose \
+  --env-file .env.mlops \
+  --file compose.mlops.yaml \
+  up \
+  --detach \
+  --wait \
+  scoring-api \
+  prometheus \
+  grafana
+```
+
+The local interfaces are available on ports `5000` for MLflow, `8000` for scoring, `9090` for Prometheus and `3000` for Grafana.
+
+Deploy the same platform to local Kubernetes:
+
+```bash
+./kubernetes/create-cluster.sh
+./kubernetes/deploy-mlflow.sh
+```
+
+Register the approved policy against Kubernetes MLflow at `http://127.0.0.1:15000`, then deploy the remaining services:
+
+```bash
+./kubernetes/deploy-scoring.sh
+./kubernetes/deploy-observability.sh
+```
+
+The Kubernetes interfaces use ports `15000` for MLflow, `18000` for scoring, `19090` for Prometheus and `13000` for Grafana.
+
+See [`docs/mlops-deployment.md`](docs/mlops-deployment.md) for the full operating procedure, API contract, monitoring behavior, restart recovery, persistence and local-development limitations.
 
 ### Run the Streaming Pipeline
 
