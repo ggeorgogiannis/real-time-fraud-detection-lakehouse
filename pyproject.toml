@@ -31,15 +31,22 @@ dependencies = [
 
 [project.optional-dependencies]
 mlops = [
+    "fastapi==0.162.0",
     "mlflow-skinny==3.10.1",
+    "prometheus-client==0.26.0",
+    "uvicorn==0.54.0",
 ]
 dev = [
     "dbt-core>=1.12,<1.13",
     "dbt-duckdb>=1.11,<1.12",
+    "fastapi==0.162.0",
+    "httpx2==2.15.1",
     "mlflow-skinny==3.10.1",
+    "prometheus-client==0.26.0",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.9",
+    "uvicorn==0.54.0",
 ]
 
 [project.scripts]
