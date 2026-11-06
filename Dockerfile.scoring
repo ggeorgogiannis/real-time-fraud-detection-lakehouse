@@ -1,0 +1,54 @@
+FROM python:3.11.16-slim-bookworm
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        libgomp1 \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid "${APP_GID}" fraud \
+    && useradd \
+        --create-home \
+        --uid "${APP_UID}" \
+        --gid "${APP_GID}" \
+        fraud
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+
+RUN python -c 'import tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; dependencies = project["dependencies"] + project["optional-dependencies"]["mlops"]; print("\n".join(dependencies))' \
+        > /tmp/scoring-requirements.txt \
+    && python -m pip install \
+        "setuptools>=75" \
+        --requirement /tmp/scoring-requirements.txt \
+    && rm /tmp/scoring-requirements.txt
+
+COPY README.md LICENSE ./
+COPY src ./src
+
+RUN python -m pip install --no-deps --no-build-isolation .
+
+USER fraud
+
+EXPOSE 8000
+
+HEALTHCHECK \
+    --interval=10s \
+    --timeout=5s \
+    --start-period=30s \
+    --retries=12 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "python", "-m", "uvicorn"]
+
+CMD ["fraud_lakehouse.scoring_api:app", "--host", "0.0.0.0", "--port", "8000"]
